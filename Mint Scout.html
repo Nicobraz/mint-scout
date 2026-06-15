@@ -961,10 +961,21 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
 
 <!-- APOLLO SEQUENCE MODAL -->
 <div class="modal-overlay" id="modal-apolloExport" onclick="if(event.target===this)closeModal('apolloExport')">
-  <div class="modal" style="max-width:480px">
+  <div class="modal" style="max-width:520px">
     <h2 style="margin-bottom:4px">Add to Apollo Sequence</h2>
-    <p style="font-size:12px;color:#888;margin-bottom:14px">Selected contacts will be created in Apollo and added directly to the chosen sequence.</p>
-    <div id="apollo-export-preview" style="background:#f8f9fa;border:1px solid #eee;border-radius:8px;padding:10px 12px;margin-bottom:18px;font-size:12px;max-height:130px;overflow-y:auto"></div>
+
+    <!-- Apollo area search results -->
+    <div id="apollo-area-section" style="margin-bottom:14px">
+      <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:5px">Property Managers Found by Apollo</div>
+      <div id="apollo-area-status" style="font-size:12px;color:#888;padding:4px 0"></div>
+      <div id="apollo-area-results" style="background:#f8f9fa;border:1px solid #eee;border-radius:8px;padding:8px 12px;font-size:12px;max-height:200px;overflow-y:auto;display:none"></div>
+    </div>
+
+    <!-- Selected properties (shown only when managers have names) -->
+    <div id="apollo-export-preview-wrap" style="margin-bottom:14px;display:none">
+      <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:5px">From selected properties</div>
+      <div id="apollo-export-preview" style="background:#f8f9fa;border:1px solid #eee;border-radius:8px;padding:8px 12px;font-size:12px;max-height:100px;overflow-y:auto"></div>
+    </div>
 
     <!-- Sequence picker -->
     <div style="margin-bottom:14px">
@@ -6140,6 +6151,7 @@ function apolloFetch(path,body,cb){ _apolloCall("POST",path,body,cb); }
 function apolloGet(path,cb){        _apolloCall("GET", path,null,cb); }
 
 var _apolloExportRows=[];
+var _apolloFoundPeople=[];
 
 function sendToApolloBot(){
   var checked=Array.from(document.querySelectorAll(".nearby-row-chk:checked"));
@@ -6180,16 +6192,30 @@ function openApolloExportModal(){
   if(!checked.length){ alert("Check at least one property first."); return; }
 
   _apolloExportRows=checked.map(function(c){ return JSON.parse(c.dataset.info); });
+  _apolloFoundPeople=[];
 
+  // Show selected properties only when at least one has a manager name
+  var previewWrap=document.getElementById("apollo-export-preview-wrap");
   var preview=document.getElementById("apollo-export-preview");
-  preview.innerHTML=_apolloExportRows.map(function(c){
-    var mgr=c.manager&&c.manager!=="—"?c.manager:"<span style='color:#bbb;font-style:italic'>no manager name</span>";
-    return '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid #f0f0f0">'
-      +'<span style="flex:1;font-weight:500">'+mgr+'</span>'
-      +'<span style="color:#888;font-size:11px">'+(c.company||c.name||"")+'</span>'
-      +'</div>';
-  }).join('')
-  +'<div style="font-size:10px;color:#aaa;padding-top:6px">'+_apolloExportRows.length+' contact(s)</div>';
+  var hasNamed=_apolloExportRows.some(function(c){ return c.manager&&c.manager!=="—"; });
+  if(hasNamed){
+    previewWrap.style.display="";
+    preview.innerHTML=_apolloExportRows.map(function(c){
+      var mgr=c.manager&&c.manager!=="—"?c.manager:"<span style='color:#bbb;font-style:italic'>no manager name</span>";
+      return '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid #f0f0f0">'
+        +'<span style="flex:1;font-weight:500">'+mgr+'</span>'
+        +'<span style="color:#888;font-size:11px">'+(c.company||c.name||"")+'</span>'
+        +'</div>';
+    }).join('')
+    +'<div style="font-size:10px;color:#aaa;padding-top:6px">'+_apolloExportRows.length+' propert(ies)</div>';
+  } else {
+    previewWrap.style.display="none";
+  }
+
+  // Reset area search section
+  document.getElementById("apollo-area-status").textContent="Searching Apollo for property managers in this area…";
+  document.getElementById("apollo-area-results").style.display="none";
+  document.getElementById("apollo-area-results").innerHTML="";
 
   var status=document.getElementById("apollo-send-status");
   status.innerHTML="";
@@ -6201,6 +6227,7 @@ function openApolloExportModal(){
 
   openModal("apolloExport");
 
+  // Load sequences + area search in parallel
   apolloFetch("emailer_campaigns/search",{per_page:25},function(data){
     if(data.error){
       sel.innerHTML='<option value="">Failed to load sequences</option>';
@@ -6214,25 +6241,86 @@ function openApolloExportModal(){
     }).join('');
     btn.disabled=false;
   });
+
+  apolloAreaSearch();
+}
+
+function apolloAreaSearch(){
+  var addr=(document.getElementById("nearby-address")||{value:""}).value.trim();
+  // Strip street number+name to get "City, ST" portion
+  var parts=addr.split(",");
+  var location=parts.length>=2?parts.slice(1).join(",").trim():addr;
+  var areaStatus=document.getElementById("apollo-area-status");
+  var areaResults=document.getElementById("apollo-area-results");
+
+  if(!location){
+    areaStatus.textContent="No location set — run a nearby search first.";
+    return;
+  }
+
+  apolloFetch("mixed_people/search",{
+    person_titles:["property manager","leasing manager","community manager","leasing consultant","leasing agent","regional property manager","apartment manager"],
+    person_locations:[location],
+    per_page:25,
+    page:1
+  },function(data){
+    if(data.error){
+      areaStatus.textContent="Apollo search error: "+data.error;
+      return;
+    }
+    var people=data.people||[];
+    _apolloFoundPeople=people;
+    if(!people.length){
+      areaStatus.textContent="No property managers found in Apollo near "+location+". Will use named managers from selection.";
+      return;
+    }
+    areaStatus.innerHTML='<span style="color:#1D9E75;font-weight:600">Found '+people.length+' property manager(s) near '+location+'</span>';
+    areaResults.style.display="";
+    areaResults.innerHTML=people.map(function(p){
+      var org=p.organization||{};
+      var company=org.name||p.organization_name||"";
+      return '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid #f0f0f0;align-items:center">'
+        +'<span style="flex:1;font-weight:500">'+(p.first_name||"")+" "+(p.last_name||"")+'</span>'
+        +'<span style="color:#888;font-size:11px;flex:1">'+(p.title||"Property Manager")+'</span>'
+        +'<span style="color:#aaa;font-size:11px">'+company+'</span>'
+        +'</div>';
+    }).join('');
+  });
 }
 
 function apolloSendToSequence(){
   var seqId=document.getElementById("apollo-seq-select").value;
   if(!seqId){ alert("Please select a sequence."); return; }
-  if(!_apolloExportRows.length){ return; }
+
+  // Build unified list: Apollo-found people first, then Mint Scout leads that have manager names
+  var toProcess=[];
+  _apolloFoundPeople.forEach(function(p){
+    var org=p.organization||{};
+    toProcess.push({first:p.first_name||"",last:p.last_name||"",company:org.name||p.organization_name||"",title:p.title||"Property Manager",email:"",phone:""});
+  });
+  _apolloExportRows.forEach(function(c){
+    if(!c.manager||c.manager==="—") return;
+    var parts=c.manager.trim().split(/\s+/);
+    toProcess.push({first:parts[0]||"",last:parts.slice(1).join(" ")||"",company:c.company||c.name||"",title:"Property Manager",email:c.email||"",phone:c.phone||""});
+  });
+
+  if(!toProcess.length){
+    document.getElementById("apollo-send-status").innerHTML='<span style="color:#c00">No contacts to process — Apollo found no one in this area and selected properties have no manager names.</span>';
+    return;
+  }
 
   var btn=document.getElementById("apollo-send-btn");
   var status=document.getElementById("apollo-send-status");
   btn.disabled=true;
 
-  var contactIds=[], enriched=0, created=0;
-  var idx=0, total=_apolloExportRows.length;
+  var contactIds=[], skipped=0;
+  var idx=0, total=toProcess.length;
 
   function setStatus(msg){ status.innerHTML='<span style="color:#888">'+msg+'</span>'; }
 
   function addToSequence(){
     if(!contactIds.length){
-      status.innerHTML='<span style="color:#c00">No contacts could be created.</span>';
+      status.innerHTML='<span style="color:#c00">No contacts with email or phone found ('+skipped+' skipped).</span>';
       btn.disabled=false;
       return;
     }
@@ -6247,23 +6335,16 @@ function apolloSendToSequence(){
         return;
       }
       var added=(data.contacts||contactIds).length;
-      var detail=enriched?" ("+enriched+" enriched)":"";
-      status.innerHTML='<span style="color:#1D9E75;font-weight:600">✓ '+added+' contact(s) added to sequence'+detail+'</span>';
+      status.innerHTML='<span style="color:#1D9E75;font-weight:600">✓ '+added+' contact(s) added to sequence'+(skipped?" · "+skipped+" skipped":"")+' </span>';
     });
   }
 
   function processNext(){
     if(idx>=total){ addToSequence(); return; }
+    var c=toProcess[idx]; idx++;
+    setStatus("("+idx+"/"+total+") Looking up "+c.first+" "+c.last+"…");
 
-    var c=_apolloExportRows[idx];
-    var parts=(c.manager||"").trim().split(/\s+/);
-    var first=parts[0]||"Unknown", last=parts.slice(1).join(" ")||"";
-    var company=c.company||c.name||"";
-    idx++;
-    setStatus("("+(idx)+"/"+total+") Looking up "+first+" "+last+"...");
-
-    // Step 1: try to enrich via people/match
-    var matchBody={first_name:first,last_name:last,organization_name:company};
+    var matchBody={first_name:c.first,last_name:c.last,organization_name:c.company};
     if(c.email) matchBody.email=c.email;
     if(c.phone) matchBody.phone_number=c.phone;
 
@@ -6273,30 +6354,26 @@ function apolloSendToSequence(){
       var hasPhone=person&&person.phone_number;
 
       if(!person||(!hasEmail&&!hasPhone)){
-        // No usable contact info — skip
-        setStatus("("+(idx)+"/"+total+") Skipped: "+first+" "+last+" — no email or phone found");
+        skipped++;
+        setStatus("("+idx+"/"+total+") Skipped: "+c.first+" "+c.last+" — no email or phone");
         processNext();
         return;
       }
 
-      enriched++;
-      var org=(person.organization||{});
+      var org=person.organization||{};
       var contactBody={
-        first_name: person.first_name||first,
-        last_name:  person.last_name||last,
-        title:      person.title||"Property Manager",
-        organization_name: org.name||company
+        first_name:person.first_name||c.first,
+        last_name:person.last_name||c.last,
+        title:person.title||c.title,
+        organization_name:org.name||c.company
       };
       if(hasEmail) contactBody.email=person.email;
       if(hasPhone) contactBody.phone_number=person.phone_number;
 
-      setStatus("("+(idx)+"/"+total+") ✓ Found: "+contactBody.first_name+" "+contactBody.last_name+(hasEmail?" · "+person.email:"")+(hasPhone?" · "+person.phone_number:""));
+      setStatus("("+idx+"/"+total+") ✓ "+contactBody.first_name+" "+contactBody.last_name+(hasEmail?" · "+person.email:"")+(hasPhone?" · "+person.phone_number:""));
 
       apolloFetch("contacts",contactBody,function(data){
-        if(data.contact&&data.contact.id){
-          contactIds.push(data.contact.id);
-          created++;
-        }
+        if(data.contact&&data.contact.id) contactIds.push(data.contact.id);
         processNext();
       });
     });
