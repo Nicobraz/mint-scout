@@ -6225,50 +6225,85 @@ function apolloSendToSequence(){
   var status=document.getElementById("apollo-send-status");
   btn.disabled=true;
 
-  var contactIds=[];
-  var idx=0;
-  var total=_apolloExportRows.length;
+  var contactIds=[], enriched=0, created=0;
+  var idx=0, total=_apolloExportRows.length;
 
-  function createNext(){
-    if(idx>=total){
-      if(!contactIds.length){
-        status.innerHTML='<span style="color:#c00">No contacts could be created.</span>';
+  function setStatus(msg){ status.innerHTML='<span style="color:#888">'+msg+'</span>'; }
+
+  function addToSequence(){
+    if(!contactIds.length){
+      status.innerHTML='<span style="color:#c00">No contacts could be created.</span>';
+      btn.disabled=false;
+      return;
+    }
+    setStatus("Adding "+contactIds.length+" contact(s) to sequence...");
+    apolloFetch("emailer_campaigns/add_contact_ids",{
+      contact_ids:contactIds,
+      emailer_campaign_id:seqId
+    },function(data){
+      if(data.error){
+        status.innerHTML='<span style="color:#c00">'+data.error+'</span>';
         btn.disabled=false;
         return;
       }
-      status.innerHTML='<span style="color:#888">Adding '+contactIds.length+' contact(s) to sequence...</span>';
-      apolloFetch("emailer_campaigns/add_contact_ids",{
-        contact_ids:contactIds,
-        emailer_campaign_id:seqId
-      },function(data){
-        if(data.error){
-          status.innerHTML='<span style="color:#c00">'+data.error+'</span>';
-          btn.disabled=false;
-          return;
-        }
-        var added=(data.contacts||contactIds).length;
-        status.innerHTML='<span style="color:#1D9E75;font-weight:600">✓ '+added+' contact(s) added to sequence!</span>';
-      });
-      return;
-    }
+      var added=(data.contacts||contactIds).length;
+      var detail=enriched?" ("+enriched+" enriched)":"";
+      status.innerHTML='<span style="color:#1D9E75;font-weight:600">✓ '+added+' contact(s) added to sequence'+detail+'</span>';
+    });
+  }
+
+  function processNext(){
+    if(idx>=total){ addToSequence(); return; }
 
     var c=_apolloExportRows[idx];
     var parts=(c.manager||"").trim().split(/\s+/);
     var first=parts[0]||"Unknown", last=parts.slice(1).join(" ")||"";
+    var company=c.company||c.name||"";
     idx++;
-    status.innerHTML='<span style="color:#888">Creating contacts... ('+idx+'/'+total+')</span>';
+    setStatus("("+(idx)+"/"+total+") Looking up "+first+" "+last+"...");
 
-    var body={first_name:first,last_name:last,title:"Property Manager",organization_name:c.company||c.name||""};
-    if(c.email) body.email=c.email;
-    if(c.phone) body.phone_number=c.phone;
+    // Step 1: try to enrich via people/match
+    var matchBody={first_name:first,last_name:last,organization_name:company};
+    if(c.email) matchBody.email=c.email;
+    if(c.phone) matchBody.phone_number=c.phone;
 
-    apolloFetch("contacts",body,function(data){
-      if(data.contact&&data.contact.id) contactIds.push(data.contact.id);
-      createNext();
+    apolloFetch("people/match",matchBody,function(matchData){
+      var person=matchData.person||null;
+      var contactBody;
+
+      if(person){
+        // Use enriched data from Apollo
+        enriched++;
+        var org=(person.organization||{});
+        contactBody={
+          first_name: person.first_name||first,
+          last_name:  person.last_name||last,
+          title:      person.title||"Property Manager",
+          organization_name: org.name||company
+        };
+        if(person.email)          contactBody.email=person.email;
+        if(person.phone_number)   contactBody.phone_number=person.phone_number;
+        setStatus("("+(idx)+"/"+total+") ✓ Enriched: "+contactBody.first_name+" "+contactBody.last_name+(person.email?" <"+person.email+">":""));
+      } else {
+        // No match — create with what we have
+        contactBody={first_name:first,last_name:last,title:"Property Manager",organization_name:company};
+        if(c.email) contactBody.email=c.email;
+        if(c.phone) contactBody.phone_number=c.phone;
+        setStatus("("+(idx)+"/"+total+") Adding: "+first+" "+last+" (no enrichment found)");
+      }
+
+      // Step 2: create contact in Apollo
+      apolloFetch("contacts",contactBody,function(data){
+        if(data.contact&&data.contact.id){
+          contactIds.push(data.contact.id);
+          created++;
+        }
+        processNext();
+      });
     });
   }
 
-  createNext();
+  processNext();
 }
 
 function apolloExportDownloadCSV(){
