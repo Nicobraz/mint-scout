@@ -6269,30 +6269,29 @@ function apolloSendToSequence(){
 
     apolloFetch("people/match",matchBody,function(matchData){
       var person=matchData.person||null;
-      var contactBody;
+      var hasEmail=person&&person.email;
+      var hasPhone=person&&person.phone_number;
 
-      if(person){
-        // Use enriched data from Apollo
-        enriched++;
-        var org=(person.organization||{});
-        contactBody={
-          first_name: person.first_name||first,
-          last_name:  person.last_name||last,
-          title:      person.title||"Property Manager",
-          organization_name: org.name||company
-        };
-        if(person.email)          contactBody.email=person.email;
-        if(person.phone_number)   contactBody.phone_number=person.phone_number;
-        setStatus("("+(idx)+"/"+total+") ✓ Enriched: "+contactBody.first_name+" "+contactBody.last_name+(person.email?" <"+person.email+">":""));
-      } else {
-        // No match — create with what we have
-        contactBody={first_name:first,last_name:last,title:"Property Manager",organization_name:company};
-        if(c.email) contactBody.email=c.email;
-        if(c.phone) contactBody.phone_number=c.phone;
-        setStatus("("+(idx)+"/"+total+") Adding: "+first+" "+last+" (no enrichment found)");
+      if(!person||(!hasEmail&&!hasPhone)){
+        // No usable contact info — skip
+        setStatus("("+(idx)+"/"+total+") Skipped: "+first+" "+last+" — no email or phone found");
+        processNext();
+        return;
       }
 
-      // Step 2: create contact in Apollo
+      enriched++;
+      var org=(person.organization||{});
+      var contactBody={
+        first_name: person.first_name||first,
+        last_name:  person.last_name||last,
+        title:      person.title||"Property Manager",
+        organization_name: org.name||company
+      };
+      if(hasEmail) contactBody.email=person.email;
+      if(hasPhone) contactBody.phone_number=person.phone_number;
+
+      setStatus("("+(idx)+"/"+total+") ✓ Found: "+contactBody.first_name+" "+contactBody.last_name+(hasEmail?" · "+person.email:"")+(hasPhone?" · "+person.phone_number:""));
+
       apolloFetch("contacts",contactBody,function(data){
         if(data.contact&&data.contact.id){
           contactIds.push(data.contact.id);
