@@ -4829,7 +4829,7 @@ function getPropCoords(r){
 }
 
 function reverseGeocode(lat, lon, cb){
-  var url="https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat="+lat+"&lon="+lon+"&zoom=18&addressdetails=1";
+  var url="https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat="+lat+"&lon="+lon+"&zoom=18&addressdetails=1&email=services@dirtymint.com";
   fetch(url).then(function(r){return r.json();}).then(function(d){
     if(d&&d.display_name){
       var a=d.address||{};
@@ -4944,7 +4944,7 @@ function attachAddressAutocomplete(inputId, opts){
     if(r.osm_type&&r.osm_id){
       var typeMap={"node":"N","way":"W","relation":"R"};
       var osmType=typeMap[r.osm_type.toLowerCase()]||r.osm_type.charAt(0).toUpperCase();
-      fetch("https://nominatim.openstreetmap.org/details?format=json&osmtype="+osmType+"&osmid="+r.osm_id+"&addressdetails=1")
+      fetch("https://nominatim.openstreetmap.org/details?format=json&osmtype="+osmType+"&osmid="+r.osm_id+"&addressdetails=1&email=services@dirtymint.com")
         .then(function(res){return res.json();})
         .then(function(d){
           if(d&&d.centroid&&d.centroid.coordinates){
@@ -4984,7 +4984,7 @@ function attachAddressAutocomplete(inputId, opts){
   function query(val){
     if(!val||val.length<3){ close(); return; }
     // viewbox=Utah bounds, bounded=0 so results outside Utah still appear if needed
-    var url="https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&countrycodes=us&addressdetails=1&layer=address,poi&viewbox=-114.05,42.00,-109.04,36.99&bounded=1&q="+encodeURIComponent(val);
+    var url="https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&countrycodes=us&addressdetails=1&layer=address,poi&viewbox=-114.05,42.00,-109.04,36.99&bounded=1&email=services@dirtymint.com&q="+encodeURIComponent(val);
     fetch(url).then(function(r){return r.json();}).then(render).catch(function(){close();});
   }
 
@@ -5018,7 +5018,7 @@ function attachAddressAutocomplete(inputId, opts){
 
 function geocodeSingle(addr,cb){
   if(geoCache[addr]){ cb(geoCache[addr]); return; } // only use cached successes
-  fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q="+encodeURIComponent(addr))
+  fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&email=services@dirtymint.com&q="+encodeURIComponent(addr))
     .then(function(r){ return r.json(); })
     .then(function(data){
       var result=(data&&data[0])?{lat:parseFloat(data[0].lat),lon:parseFloat(data[0].lon)}:null;
