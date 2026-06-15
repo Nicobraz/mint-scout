@@ -449,6 +449,7 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
   <button class="tab-btn" id="btn-contacts" onclick="showTab('contacts')">📞 Contact Tracker</button>
   <button class="tab-btn" id="btn-outreach" onclick="showTab('outreach')">🎯 Outreach</button>
   <button class="tab-btn" id="btn-nearby"   onclick="showTab('nearby')">📍 Nearby</button>
+  <button class="tab-btn" id="btn-qualified" onclick="showTab('qualified')">✨ Qualified</button>
   <button class="tab-btn" id="btn-appts"    onclick="showTab('appts')">📅 Appointments</button>
   <button class="tab-btn" id="btn-gleads"   onclick="showTab('gleads')">📋 General Leads</button>
   <button class="tab-btn" id="btn-fillday"  onclick="showTab('fillday')">🗓 Fill My Day</button>
@@ -809,6 +810,19 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
 </div>
 
 <!-- APPOINTMENTS PANE -->
+<div id="pane-qualified" style="display:none">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+    <button class="btn btn-green" id="qc-enrich-btn" onclick="runQualifiedEnrich()">🔍 Enrich Named Managers</button>
+    <button class="btn btn-primary" id="qc-city-btn" onclick="runQualifiedCitySearch()">🌐 Search My Cities</button>
+    <button class="btn" style="background:#f0f0f0;color:#555" onclick="clearQualifiedContacts()">🗑 Clear All</button>
+    <span id="qc-count" style="font-size:12px;color:#888;flex:1"></span>
+    <button class="btn btn-gold" id="qc-add-seq-btn" onclick="openQCSequenceModal()" style="display:none">Add to Sequence</button>
+    <button class="btn btn-primary" id="qc-csv-btn" onclick="downloadQualifiedCSV()" style="display:none">Export CSV</button>
+  </div>
+  <div id="qc-status" style="font-size:12px;color:#888;padding:2px 0 10px;min-height:18px"></div>
+  <div id="qc-results"></div>
+</div>
+
 <div id="pane-appts" style="display:none">
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
     <h2 style="font-size:16px;font-weight:600;color:#1a1a1a;flex:1">📅 Appointments</h2>
@@ -994,6 +1008,25 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
     </div>
     <div style="text-align:center;margin-top:12px">
       <a href="#" onclick="apolloExportDownloadCSV();return false;" style="font-size:11px;color:#aaa;text-decoration:none">Download CSV instead ↓</a>
+    </div>
+  </div>
+</div>
+
+<!-- QUALIFIED CONTACTS SEQUENCE MODAL -->
+<div class="modal-overlay" id="modal-qcSequence" onclick="if(event.target===this)closeModal('qcSequence')">
+  <div class="modal" style="max-width:440px">
+    <h2 style="margin-bottom:4px">Add to Sequence</h2>
+    <div id="qc-seq-preview" style="background:#f8f9fa;border:1px solid #eee;border-radius:8px;padding:8px 12px;margin-bottom:14px;font-size:12px;max-height:140px;overflow-y:auto"></div>
+    <div style="margin-bottom:14px">
+      <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:6px">Choose Sequence</div>
+      <select id="qc-seq-select" style="width:100%;padding:9px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px;background:#fff;color:#333;cursor:pointer">
+        <option value="">Loading sequences...</option>
+      </select>
+    </div>
+    <div id="qc-seq-status" style="font-size:12px;min-height:20px;margin-bottom:10px"></div>
+    <div class="modal-actions" style="margin-top:8px">
+      <button class="btn btn-green" onclick="sendQCContactsToSequence()" id="qc-seq-btn" disabled>Add to Sequence</button>
+      <button class="btn btn-cancel" onclick="closeModal('qcSequence')">Cancel</button>
     </div>
   </div>
 </div>
@@ -2941,7 +2974,7 @@ function getAllRows() {
 
 // ── TAB SWITCHING ─────────────────────────────────────────────────────────
 function showTab(tab) {
-  ["dash","map","players","clients","contacts","outreach","nearby","appts","gleads","fillday","scoutrun"].forEach(function(t) {
+  ["dash","map","players","clients","contacts","outreach","nearby","qualified","appts","gleads","fillday","scoutrun"].forEach(function(t) {
     document.getElementById("pane-"+t).style.display=(t===tab)?"":"none";
     document.getElementById("btn-"+t).classList[(t===tab)?"add":"remove"]("active");
   });
@@ -2951,6 +2984,7 @@ function showTab(tab) {
   if(tab==="contacts")  renderContacts();
   if(tab==="outreach")  renderOutreach();
   if(tab==="appts")     { renderCalAppts(); syncGoogleCalendar(true); }
+  if(tab==="qualified") renderQualifiedTab();
   if(tab==="gleads")    renderGLeads();
   if(tab==="fillday")   renderFillMyDay();
   if(tab==="scoutrun")  renderScoutRun();
@@ -6405,6 +6439,407 @@ function apolloExportDownloadCSV(){
   a.download="apollo_contacts_"+new Date().toISOString().slice(0,10)+".csv";
   a.click();
 }
+
+// ── QUALIFIED CONTACTS ────────────────────────────────────────────────────────
+
+var _qcRunning=false;
+var _qcPeopleQueue=[];
+var _qcSelectedContacts=[];
+
+function getQualifiedContacts(){ return customData.qualifiedContacts||[]; }
+
+function saveQualifiedContact(c){
+  if(!customData.qualifiedContacts) customData.qualifiedContacts=[];
+  var idx=customData.qualifiedContacts.findIndex(function(x){
+    if(c.email&&x.email) return x.email.toLowerCase()===c.email.toLowerCase();
+    return x.firstName===c.firstName&&x.lastName===c.lastName&&x.company===c.company;
+  });
+  if(idx>=0) customData.qualifiedContacts[idx]=c;
+  else customData.qualifiedContacts.push(c);
+  saveAll();
+}
+
+function removeQualifiedContact(id){
+  customData.qualifiedContacts=(customData.qualifiedContacts||[]).filter(function(c){ return c.id!==id; });
+  saveAll();
+  renderQualifiedTab();
+}
+
+function clearQualifiedContacts(){
+  if(!confirm("Clear all qualified contacts?")) return;
+  customData.qualifiedContacts=[];
+  saveAll();
+  renderQualifiedTab();
+}
+
+function _qcSetStatus(msg){ var el=document.getElementById("qc-status"); if(el) el.textContent=msg; }
+
+function _qcSetRunning(val){
+  _qcRunning=val;
+  var eb=document.getElementById("qc-enrich-btn");
+  var cb=document.getElementById("qc-city-btn");
+  if(eb) eb.disabled=val;
+  if(cb) cb.disabled=val;
+}
+
+function runQualifiedEnrich(){
+  if(_qcRunning) return;
+  var rows=getAllRows();
+  var toEnrich=[];
+  rows.forEach(function(r){
+    var d=propData[pkey(r)]||{};
+    if(!d.manager||!d.manager.trim()) return;
+    var parts=d.manager.trim().split(/\s+/);
+    toEnrich.push({
+      firstName:parts[0]||"",
+      lastName:parts.slice(1).join(" ")||"",
+      company:r[1]||"",
+      city:r[2]||"",
+      sourceProp:r[0],
+      email:d.email||"",
+      phone:d.phone||""
+    });
+  });
+  if(!toEnrich.length){ _qcSetStatus("No properties with manager names found in your database."); return; }
+
+  _qcSetRunning(true);
+  var idx=0, found=0, skipped=0, total=toEnrich.length;
+
+  function next(){
+    if(idx>=total){
+      _qcSetRunning(false);
+      _qcSetStatus("Done — found "+found+" qualified contact(s), skipped "+skipped+".");
+      renderQualifiedTab();
+      return;
+    }
+    var c=toEnrich[idx]; idx++;
+    _qcSetStatus("("+idx+"/"+total+") Enriching "+c.firstName+" "+c.lastName+" — "+c.sourceProp+"…");
+    var mb={first_name:c.firstName,last_name:c.lastName,organization_name:c.company};
+    if(c.email) mb.email=c.email;
+    if(c.phone) mb.phone_number=c.phone;
+    apolloFetch("people/match",mb,function(data){
+      var p=data.person||null;
+      if(p&&(p.email||p.phone_number)){
+        var org=p.organization||{};
+        saveQualifiedContact({
+          id:"qc_"+Date.now()+"_"+Math.random().toString(36).slice(2),
+          firstName:p.first_name||c.firstName,
+          lastName:p.last_name||c.lastName,
+          title:p.title||"Property Manager",
+          company:org.name||c.company,
+          email:p.email||"",
+          phone:p.phone_number||"",
+          city:c.city,
+          source:"property",
+          sourceProp:c.sourceProp,
+          addedAt:Date.now()
+        });
+        found++;
+      } else { skipped++; }
+      setTimeout(next,1200);
+    });
+  }
+  next();
+}
+
+function runQualifiedCitySearch(){
+  if(_qcRunning) return;
+  var seen={}, cities=[];
+  getAllRows().forEach(function(r){ if(r[2]&&!seen[r[2]]){ seen[r[2]]=1; cities.push(r[2]); } });
+  if(!cities.length){ _qcSetStatus("No cities found in your database."); return; }
+
+  _qcSetRunning(true);
+  _qcPeopleQueue=[];
+  var ci=0;
+
+  function nextCity(){
+    if(ci>=cities.length){
+      if(!_qcPeopleQueue.length){
+        _qcSetRunning(false);
+        _qcSetStatus("No property managers found in Apollo for any city in your database.");
+        return;
+      }
+      _qcSetStatus("Found "+_qcPeopleQueue.length+" people across "+cities.length+" cit"+(cities.length===1?"y":"ies")+". Enriching…");
+      enrichQCQueue();
+      return;
+    }
+    var city=cities[ci]; ci++;
+    _qcSetStatus("("+ci+"/"+cities.length+") Searching Apollo in "+city+"…");
+    apolloFetch("mixed_people/search",{
+      person_titles:["property manager","leasing manager","community manager","leasing consultant","leasing agent","regional property manager","apartment manager"],
+      person_locations:[city],
+      per_page:25,
+      page:1
+    },function(data){
+      (data.people||[]).forEach(function(p){
+        var org=p.organization||{};
+        _qcPeopleQueue.push({
+          firstName:p.first_name||"",
+          lastName:p.last_name||"",
+          company:org.name||p.organization_name||"",
+          title:p.title||"Property Manager",
+          city:city,
+          source:"city-search"
+        });
+      });
+      setTimeout(nextCity,1500);
+    });
+  }
+  nextCity();
+}
+
+function enrichQCQueue(){
+  var queue=_qcPeopleQueue.slice();
+  _qcPeopleQueue=[];
+  var total=queue.length, idx=0, found=0, skipped=0;
+
+  function next(){
+    if(idx>=total){
+      _qcSetRunning(false);
+      _qcSetStatus("City search complete — "+found+" qualified contact(s) added ("+skipped+" had no email or phone).");
+      renderQualifiedTab();
+      return;
+    }
+    var c=queue[idx]; idx++;
+    _qcSetStatus("("+idx+"/"+total+") Getting contact info for "+c.firstName+" "+c.lastName+"…");
+    apolloFetch("people/match",{
+      first_name:c.firstName,
+      last_name:c.lastName,
+      organization_name:c.company
+    },function(data){
+      var p=data.person||null;
+      if(p&&(p.email||p.phone_number)){
+        var org=p.organization||{};
+        saveQualifiedContact({
+          id:"qc_"+Date.now()+"_"+Math.random().toString(36).slice(2),
+          firstName:p.first_name||c.firstName,
+          lastName:p.last_name||c.lastName,
+          title:p.title||c.title,
+          company:org.name||c.company,
+          email:p.email||"",
+          phone:p.phone_number||"",
+          city:c.city,
+          source:"city-search",
+          sourceProp:"",
+          addedAt:Date.now()
+        });
+        found++;
+      } else { skipped++; }
+      setTimeout(next,1200);
+    });
+  }
+  next();
+}
+
+function renderQualifiedTab(){
+  var contacts=getQualifiedContacts();
+  var countEl=document.getElementById("qc-count");
+  var resultsEl=document.getElementById("qc-results");
+  var addBtn=document.getElementById("qc-add-seq-btn");
+  var csvBtn=document.getElementById("qc-csv-btn");
+  if(!resultsEl) return;
+
+  var n=contacts.length;
+  if(countEl) countEl.textContent=n?" "+n+" qualified contact"+(n===1?"":"s")+" saved":"";
+  if(addBtn) addBtn.style.display=n?"":"none";
+  if(csvBtn) csvBtn.style.display=n?"":"none";
+
+  if(!n){
+    resultsEl.innerHTML='<div style="text-align:center;color:#aaa;padding:48px;font-size:13px"><div style="font-size:28px;margin-bottom:10px">✨</div>No qualified contacts yet.<br><br>Click <b>Enrich Named Managers</b> to look up manager names already in your database,<br>or <b>Search My Cities</b> to have Apollo find property managers in all your cities.</div>';
+    return;
+  }
+
+  var frag=document.createDocumentFragment();
+
+  // Selection bar
+  var selBar=document.createElement("div");
+  selBar.style.cssText="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px;border-radius:8px;background:#f8f8f8;border:1px solid #e8e8e8;margin-bottom:10px;font-size:12px";
+  selBar.id="qc-sel-bar";
+
+  var selCount=document.createElement("span");
+  selCount.id="qc-sel-count"; selCount.style.cssText="font-weight:600;color:#333";
+  selCount.textContent="0 selected";
+
+  var selSeqBtn=document.createElement("button");
+  selSeqBtn.className="btn btn-green"; selSeqBtn.style.cssText="display:none;font-size:12px";
+  selSeqBtn.textContent="Add Selected to Sequence"; selSeqBtn.onclick=openQCSequenceModal;
+
+  var allChkLabel=document.createElement("label");
+  allChkLabel.style.cssText="display:flex;align-items:center;gap:4px;cursor:pointer;color:#888;margin-left:auto";
+  var allChk=document.createElement("input"); allChk.type="checkbox"; allChk.style.cssText="accent-color:#1D9E75;cursor:pointer";
+  allChk.id="qc-all-chk";
+  allChk.onchange=function(){ document.querySelectorAll(".qc-row-chk").forEach(function(c){ c.checked=allChk.checked; }); _updateQCSelBar(); };
+  allChkLabel.appendChild(allChk);
+  allChkLabel.appendChild(document.createTextNode(" Select all"));
+
+  selBar.appendChild(selCount); selBar.appendChild(selSeqBtn); selBar.appendChild(allChkLabel);
+  frag.appendChild(selBar);
+
+  // Table
+  var tbl=document.createElement("table"); tbl.className="client-table"; tbl.style.width="100%";
+  tbl.innerHTML='<thead><tr>'
+    +'<th style="padding:8px 10px;font-size:11px;font-weight:600;color:#888;border-bottom:2px solid #e0e0e0;width:32px"></th>'
+    +'<th style="padding:8px 10px;font-size:11px;font-weight:600;color:#888;border-bottom:2px solid #e0e0e0">Name</th>'
+    +'<th style="padding:8px 10px;font-size:11px;font-weight:600;color:#888;border-bottom:2px solid #e0e0e0">Title</th>'
+    +'<th style="padding:8px 10px;font-size:11px;font-weight:600;color:#888;border-bottom:2px solid #e0e0e0">Company</th>'
+    +'<th style="padding:8px 10px;font-size:11px;font-weight:600;color:#888;border-bottom:2px solid #e0e0e0">Email</th>'
+    +'<th style="padding:8px 10px;font-size:11px;font-weight:600;color:#888;border-bottom:2px solid #e0e0e0">Phone</th>'
+    +'<th style="padding:8px 10px;font-size:11px;font-weight:600;color:#888;border-bottom:2px solid #e0e0e0">City</th>'
+    +'<th style="padding:8px 10px;font-size:11px;font-weight:600;color:#888;border-bottom:2px solid #e0e0e0">Source</th>'
+    +'<th></th>'
+    +'</tr></thead>';
+  var tbody=document.createElement("tbody");
+
+  contacts.forEach(function(c){
+    var tr=document.createElement("tr");
+    var chk=document.createElement("input"); chk.type="checkbox"; chk.className="qc-row-chk";
+    chk.dataset.id=c.id; chk.style.cssText="accent-color:#1D9E75;cursor:pointer";
+    chk.onchange=_updateQCSelBar;
+    var tdChk=document.createElement("td"); tdChk.style.cssText="padding:8px 10px;text-align:center"; tdChk.appendChild(chk);
+
+    function td(txt,style){
+      var el=document.createElement("td");
+      el.style.cssText="padding:8px 10px;font-size:12px"+(style?";"+style:"");
+      el.innerHTML=txt||"<span style='color:#ddd'>—</span>";
+      return el;
+    }
+
+    var delBtn=document.createElement("button");
+    delBtn.style.cssText="background:none;border:none;color:#ddd;cursor:pointer;font-size:14px;padding:0 4px";
+    delBtn.textContent="×"; delBtn.title="Remove";
+    delBtn.setAttribute("onclick","removeQualifiedContact('"+c.id+"')");
+
+    var tdDel=document.createElement("td"); tdDel.style.cssText="padding:4px 6px"; tdDel.appendChild(delBtn);
+
+    var emailHtml=c.email?'<a href="mailto:'+c.email+'" style="color:#378ADD;text-decoration:none">'+c.email+'</a>':"";
+    var srcHtml=c.source==="property"
+      ?'<span style="color:#1D9E75;font-size:10px">📍 '+c.sourceProp+'</span>'
+      :'<span style="color:#378ADD;font-size:10px">🌐 City</span>';
+
+    tr.appendChild(tdChk);
+    tr.appendChild(td('<span style="font-weight:500">'+(c.firstName||"")+" "+(c.lastName||"")+'</span>'));
+    tr.appendChild(td(c.title,"color:#888"));
+    tr.appendChild(td(c.company));
+    tr.appendChild(td(emailHtml));
+    tr.appendChild(td(c.phone));
+    tr.appendChild(td(c.city,"color:#888"));
+    tr.appendChild(td(srcHtml));
+    tr.appendChild(tdDel);
+    tbody.appendChild(tr);
+  });
+
+  tbl.appendChild(tbody);
+  frag.appendChild(tbl);
+  resultsEl.innerHTML="";
+  resultsEl.appendChild(frag);
+  _updateQCSelBar();
+}
+
+function _updateQCSelBar(){
+  var checked=document.querySelectorAll(".qc-row-chk:checked").length;
+  var total=document.querySelectorAll(".qc-row-chk").length;
+  var countEl=document.getElementById("qc-sel-count");
+  var seqBtn=document.querySelector("#qc-sel-bar .btn-green");
+  var allChk=document.getElementById("qc-all-chk");
+  if(countEl) countEl.textContent=checked+" of "+total+" selected";
+  if(seqBtn) seqBtn.style.display=checked>0?"":"none";
+  if(allChk) allChk.checked=total>0&&checked===total;
+}
+
+function openQCSequenceModal(){
+  var checked=Array.from(document.querySelectorAll(".qc-row-chk:checked"));
+  if(!checked.length){ alert("Select at least one contact."); return; }
+  var ids=checked.map(function(c){ return c.dataset.id; });
+  _qcSelectedContacts=getQualifiedContacts().filter(function(c){ return ids.indexOf(c.id)>=0; });
+
+  var preview=document.getElementById("qc-seq-preview");
+  preview.innerHTML=_qcSelectedContacts.map(function(c){
+    return '<div style="display:flex;gap:8px;padding:3px 0;border-bottom:1px solid #f0f0f0">'
+      +'<span style="flex:1;font-weight:500">'+(c.firstName||"")+" "+(c.lastName||"")+'</span>'
+      +'<span style="color:#888;font-size:11px">'+(c.email||c.phone||"")+'</span>'
+      +'</div>';
+  }).join('')
+  +'<div style="font-size:10px;color:#aaa;padding-top:5px">'+_qcSelectedContacts.length+' contact(s) — already enriched, no credits used</div>';
+
+  document.getElementById("qc-seq-status").innerHTML="";
+  var sel=document.getElementById("qc-seq-select");
+  sel.innerHTML='<option value="">Loading sequences...</option>';
+  var btn=document.getElementById("qc-seq-btn");
+  btn.disabled=true;
+  openModal("qcSequence");
+
+  apolloFetch("emailer_campaigns/search",{per_page:25},function(data){
+    if(data.error){ sel.innerHTML='<option value="">Failed: '+data.error+'</option>'; return; }
+    var seqs=(data.emailer_campaigns||[]).filter(function(s){ return !s.archived; });
+    if(!seqs.length){ sel.innerHTML='<option value="">No sequences found</option>'; return; }
+    sel.innerHTML=seqs.map(function(s){
+      return '<option value="'+s.id+'">'+s.name+(s.active?' ✓':'')+'</option>';
+    }).join('');
+    btn.disabled=false;
+  });
+}
+
+function sendQCContactsToSequence(){
+  var seqId=document.getElementById("qc-seq-select").value;
+  if(!seqId){ alert("Please select a sequence."); return; }
+  if(!_qcSelectedContacts.length) return;
+
+  var btn=document.getElementById("qc-seq-btn");
+  var status=document.getElementById("qc-seq-status");
+  btn.disabled=true;
+
+  var contactIds=[], idx=0, total=_qcSelectedContacts.length, skipped=0;
+  function setStatus(msg){ status.innerHTML='<span style="color:#888">'+msg+'</span>'; }
+
+  function addToSeq(){
+    if(!contactIds.length){
+      status.innerHTML='<span style="color:#c00">No contacts created ('+skipped+' had no email/phone).</span>';
+      btn.disabled=false; return;
+    }
+    setStatus("Adding "+contactIds.length+" to sequence…");
+    apolloFetch("emailer_campaigns/add_contact_ids",{
+      contact_ids:contactIds,
+      emailer_campaign_id:seqId
+    },function(data){
+      if(data.error){ status.innerHTML='<span style="color:#c00">'+data.error+'</span>'; btn.disabled=false; return; }
+      var added=(data.contacts||contactIds).length;
+      status.innerHTML='<span style="color:#1D9E75;font-weight:600">✓ '+added+' contact(s) added to sequence'+(skipped?" · "+skipped+" skipped":"")+' </span>';
+    });
+  }
+
+  function next(){
+    if(idx>=total){ addToSeq(); return; }
+    var c=_qcSelectedContacts[idx]; idx++;
+    setStatus("("+idx+"/"+total+") Creating: "+c.firstName+" "+c.lastName+"…");
+    if(!c.email&&!c.phone){ skipped++; next(); return; }
+    var body={first_name:c.firstName,last_name:c.lastName,title:c.title||"Property Manager",organization_name:c.company};
+    if(c.email) body.email=c.email;
+    if(c.phone) body.phone_number=c.phone;
+    apolloFetch("contacts",body,function(data){
+      if(data.contact&&data.contact.id) contactIds.push(data.contact.id);
+      else skipped++;
+      next();
+    });
+  }
+  next();
+}
+
+function downloadQualifiedCSV(){
+  var contacts=getQualifiedContacts();
+  if(!contacts.length){ alert("No qualified contacts to export."); return; }
+  function esc(v){ return '"'+(v||"").replace(/"/g,'""')+'"'; }
+  var lines=["First Name,Last Name,Title,Company,Email,Phone,City,Source"];
+  contacts.forEach(function(c){
+    lines.push([esc(c.firstName),esc(c.lastName),esc(c.title),esc(c.company),esc(c.email),esc(c.phone),esc(c.city),esc(c.source==="property"?"Property: "+c.sourceProp:"City Search")].join(","));
+  });
+  var blob=new Blob([lines.join("\n")],{type:"text/csv"});
+  var a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="qualified_contacts_"+new Date().toISOString().slice(0,10)+".csv";
+  a.click();
+}
+
+// ── END QUALIFIED CONTACTS ────────────────────────────────────────────────────
 
 function addNearbyToClients(){
   var checked=Array.from(document.querySelectorAll(".nearby-row-chk:checked"));
