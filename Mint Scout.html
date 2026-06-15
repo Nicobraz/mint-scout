@@ -814,6 +814,7 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
     <button class="btn btn-green" id="qc-enrich-btn" onclick="runQualifiedEnrich()">🔍 Enrich Named Managers</button>
     <button class="btn btn-primary" id="qc-city-btn" onclick="runQualifiedCitySearch()">🌐 Search My Cities</button>
+    <button class="btn" style="background:#9b59b6;color:#fff" onclick="openApolloImportModal()">⬇ Import from Apollo</button>
     <button class="btn" style="background:#f0f0f0;color:#555" onclick="clearQualifiedContacts()">🗑 Clear All</button>
     <span id="qc-count" style="font-size:12px;color:#888;flex:1"></span>
     <button class="btn btn-gold" id="qc-add-seq-btn" onclick="openQCSequenceModal()" style="display:none">Add to Sequence</button>
@@ -1027,6 +1028,30 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
     <div class="modal-actions" style="margin-top:8px">
       <button class="btn btn-green" onclick="sendQCContactsToSequence()" id="qc-seq-btn" disabled>Add to Sequence</button>
       <button class="btn btn-cancel" onclick="closeModal('qcSequence')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- APOLLO IMPORT MODAL -->
+<div class="modal-overlay" id="modal-apolloImport" onclick="if(event.target===this)closeModal('apolloImport')">
+  <div class="modal" style="max-width:560px">
+    <h2 style="margin-bottom:4px">Import from Apollo</h2>
+    <p style="font-size:12px;color:#888;margin-bottom:12px">Search your existing Apollo contacts and import them into Qualified Contacts.</p>
+
+    <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+      <input type="text" id="ai-keyword" placeholder="Filter by name, title, company…" style="flex:1;min-width:160px;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px">
+      <button class="btn btn-primary" onclick="fetchApolloContacts(1)" id="ai-fetch-btn">Search</button>
+    </div>
+
+    <div id="ai-status" style="font-size:12px;color:#888;min-height:18px;margin-bottom:8px"></div>
+
+    <div id="ai-results" style="max-height:320px;overflow-y:auto;font-size:12px"></div>
+
+    <div id="ai-pagination" style="display:flex;align-items:center;gap:10px;margin-top:10px;font-size:12px;color:#888"></div>
+
+    <div class="modal-actions" style="margin-top:14px">
+      <button class="btn btn-green" onclick="importSelectedApolloContacts()" id="ai-import-btn" disabled>Import Selected</button>
+      <button class="btn btn-cancel" onclick="closeModal('apolloImport')">Close</button>
     </div>
   </div>
 </div>
@@ -6765,6 +6790,163 @@ function downloadQualifiedCSV(){
   a.download="qualified_contacts_"+new Date().toISOString().slice(0,10)+".csv";
   a.click();
 }
+
+// ── APOLLO IMPORT ─────────────────────────────────────────────────────────────
+
+var _aiCurrentPage=1;
+var _aiTotalPages=1;
+var _aiFetchedContacts=[];
+
+function openApolloImportModal(){
+  document.getElementById("ai-keyword").value="";
+  document.getElementById("ai-status").textContent="";
+  document.getElementById("ai-results").innerHTML="";
+  document.getElementById("ai-pagination").innerHTML="";
+  document.getElementById("ai-import-btn").disabled=true;
+  _aiFetchedContacts=[];
+  _aiCurrentPage=1;
+  openModal("apolloImport");
+  fetchApolloContacts(1);
+}
+
+function fetchApolloContacts(page){
+  var keyword=(document.getElementById("ai-keyword").value||"").trim();
+  var status=document.getElementById("ai-status");
+  var fetchBtn=document.getElementById("ai-fetch-btn");
+  fetchBtn.disabled=true;
+  status.textContent="Fetching contacts from Apollo…";
+  document.getElementById("ai-results").innerHTML="";
+  document.getElementById("ai-pagination").innerHTML="";
+  document.getElementById("ai-import-btn").disabled=true;
+
+  var body={per_page:25,page:page};
+  if(keyword) body.q_keywords=keyword;
+
+  apolloFetch("contacts/search",body,function(data){
+    fetchBtn.disabled=false;
+    if(data.error){ status.textContent="Error: "+data.error; return; }
+
+    var contacts=data.contacts||[];
+    var meta=data.pagination||{};
+    _aiCurrentPage=page;
+    _aiTotalPages=Math.ceil((meta.total_entries||contacts.length)/25)||1;
+
+    if(!contacts.length){
+      status.textContent="No contacts found.";
+      return;
+    }
+
+    status.textContent="Showing "+(((page-1)*25)+1)+"–"+(((page-1)*25)+contacts.length)+" of "+(meta.total_entries||contacts.length)+" contacts";
+
+    // Store for import
+    _aiFetchedContacts=contacts;
+
+    // Render table
+    var resultsEl=document.getElementById("ai-results");
+    var tbl=document.createElement("table");
+    tbl.className="client-table"; tbl.style.width="100%";
+    tbl.innerHTML='<thead><tr>'
+      +'<th style="padding:6px 8px;font-size:11px;font-weight:600;color:#888;border-bottom:2px solid #e0e0e0;width:28px"><input type="checkbox" id="ai-all-chk" onchange="aiToggleAll(this.checked)" style="accent-color:#9b59b6"></th>'
+      +'<th style="padding:6px 8px;font-size:11px;font-weight:600;color:#888;border-bottom:2px solid #e0e0e0">Name</th>'
+      +'<th style="padding:6px 8px;font-size:11px;font-weight:600;color:#888;border-bottom:2px solid #e0e0e0">Title</th>'
+      +'<th style="padding:6px 8px;font-size:11px;font-weight:600;color:#888;border-bottom:2px solid #e0e0e0">Company</th>'
+      +'<th style="padding:6px 8px;font-size:11px;font-weight:600;color:#888;border-bottom:2px solid #e0e0e0">Email / Phone</th>'
+      +'</tr></thead>';
+    var tbody=document.createElement("tbody");
+
+    contacts.forEach(function(c,i){
+      var hasContact=c.email||c.phone_number;
+      var tr=document.createElement("tr");
+      if(!hasContact) tr.style.opacity="0.45";
+
+      var chk=document.createElement("input"); chk.type="checkbox";
+      chk.className="ai-row-chk"; chk.dataset.idx=i;
+      chk.style.cssText="accent-color:#9b59b6;cursor:pointer";
+      chk.disabled=!hasContact;
+      chk.onchange=_updateAIImportBtn;
+      var tdChk=document.createElement("td"); tdChk.style.cssText="padding:6px 8px;text-align:center";
+      tdChk.appendChild(chk);
+
+      function td(txt,style){
+        var el=document.createElement("td");
+        el.style.cssText="padding:6px 8px;font-size:12px"+(style?";"+style:"");
+        el.innerHTML=txt||"<span style='color:#ddd'>—</span>"; return el;
+      }
+
+      var contact=c.email||(c.phone_number||"");
+      tr.appendChild(tdChk);
+      tr.appendChild(td('<span style="font-weight:500">'+(c.first_name||"")+" "+(c.last_name||"")+'</span>'));
+      tr.appendChild(td(c.title,"color:#888"));
+      tr.appendChild(td(c.organization_name||((c.organization||{}).name)||""));
+      tr.appendChild(td(c.email?'<span style="color:#378ADD">'+c.email+'</span>':(c.phone_number||"")));
+      tbody.appendChild(tr);
+    });
+
+    tbl.appendChild(tbody);
+    resultsEl.innerHTML="";
+    resultsEl.appendChild(tbl);
+
+    // Pagination
+    var pag=document.getElementById("ai-pagination");
+    pag.innerHTML="";
+    if(_aiTotalPages>1){
+      var prevBtn=document.createElement("button");
+      prevBtn.className="btn"; prevBtn.style.cssText="font-size:11px;padding:4px 10px";
+      prevBtn.textContent="← Prev"; prevBtn.disabled=page<=1;
+      prevBtn.onclick=function(){ fetchApolloContacts(page-1); };
+
+      var pageLabel=document.createElement("span");
+      pageLabel.textContent="Page "+page+" of "+_aiTotalPages;
+
+      var nextBtn=document.createElement("button");
+      nextBtn.className="btn"; nextBtn.style.cssText="font-size:11px;padding:4px 10px";
+      nextBtn.textContent="Next →"; nextBtn.disabled=page>=_aiTotalPages;
+      nextBtn.onclick=function(){ fetchApolloContacts(page+1); };
+
+      pag.appendChild(prevBtn); pag.appendChild(pageLabel); pag.appendChild(nextBtn);
+    }
+  });
+}
+
+function aiToggleAll(checked){
+  document.querySelectorAll(".ai-row-chk:not(:disabled)").forEach(function(c){ c.checked=checked; });
+  _updateAIImportBtn();
+}
+
+function _updateAIImportBtn(){
+  var n=document.querySelectorAll(".ai-row-chk:checked").length;
+  var btn=document.getElementById("ai-import-btn");
+  if(btn){ btn.disabled=n===0; btn.textContent=n?"Import "+n+" Contact"+(n===1?"":"s"):"Import Selected"; }
+}
+
+function importSelectedApolloContacts(){
+  var checked=Array.from(document.querySelectorAll(".ai-row-chk:checked"));
+  if(!checked.length) return;
+  var imported=0;
+  checked.forEach(function(chk){
+    var c=_aiFetchedContacts[parseInt(chk.dataset.idx)];
+    if(!c) return;
+    saveQualifiedContact({
+      id:"qc_"+Date.now()+"_"+Math.random().toString(36).slice(2),
+      firstName:c.first_name||"",
+      lastName:c.last_name||"",
+      title:c.title||"",
+      company:c.organization_name||((c.organization||{}).name)||"",
+      email:c.email||"",
+      phone:c.phone_number||"",
+      city:(c.city||((c.account||{}).city)||""),
+      source:"apollo-import",
+      sourceProp:"",
+      addedAt:Date.now()
+    });
+    imported++;
+  });
+  closeModal("apolloImport");
+  renderQualifiedTab();
+  showToast(imported+" contact"+(imported===1?" ":"s ")+"imported to Qualified Contacts");
+}
+
+// ── END APOLLO IMPORT ─────────────────────────────────────────────────────────
 
 // ── END QUALIFIED CONTACTS ────────────────────────────────────────────────────
 
