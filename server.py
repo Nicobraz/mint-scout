@@ -9,10 +9,11 @@ import json
 import os
 import urllib.request
 import urllib.error
-from flask import Flask, request, Response
+from flask import Flask, request, Response, send_file
 
-app = Flask(__name__, static_folder=".", static_url_path="")
+app = Flask(__name__)
 APOLLO_BASE = "https://api.apollo.io/api/v1/"
+HTML_FILE   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Mint Scout.html")
 
 
 def apollo_key():
@@ -21,7 +22,7 @@ def apollo_key():
 
 @app.route("/")
 def index():
-    return app.send_static_file("Mint Scout.html")
+    return send_file(HTML_FILE)
 
 
 @app.route("/apollo/<path:path>", methods=["GET", "POST", "OPTIONS"])
