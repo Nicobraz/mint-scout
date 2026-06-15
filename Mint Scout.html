@@ -6104,34 +6104,36 @@ function testApolloKey(){
 var _pendingApolloSeqOpen=false;
 var _apolloSelectedContacts=[];
 
-// Apollo API base — key goes in X-Api-Key header, not URL
-var APOLLO_BASE="https://api.apollo.io/api/v1/";
-// Proxy prepended to full target URL when direct call fails (CORS)
-var APOLLO_PROXY="https://corsproxy.io/?";
-
 function _apolloCall(method,path,body,cb){
-  var key=getApolloKey();
-  if(!key){ cb({error:"No Apollo API key saved."}); return; }
-  var target=APOLLO_BASE+path;
-  var headers={"Content-Type":"application/json","X-Api-Key":key};
-  var opts={method:method,headers:headers};
-  if(body) opts.body=JSON.stringify(body);
+  // When served from a real server (Render, localhost) use the same-origin
+  // /apollo/* proxy — API key lives on the server, no CORS issues.
+  // When opened as file:// fall back to direct + CORS proxy with browser key.
+  var onServer=location.protocol==="http:"||location.protocol==="https:";
+  var urls, headers={"Content-Type":"application/json"};
 
-  function tryProxy(){
-    var proxyUrl=APOLLO_PROXY+encodeURIComponent(target);
-    fetch(proxyUrl,opts)
-      .then(function(r){ return r.json().then(function(d){ return {ok:r.ok,d:d}; }); })
-      .then(function(res){ cb(res.ok?res.d:(res.d.error?res.d:{error:"Apollo error"})); })
-      .catch(function(){ cb({error:"Cannot reach Apollo API. Check your network."}); });
+  if(onServer){
+    urls=["/apollo/"+path];
+  } else {
+    var key=getApolloKey();
+    if(!key){ cb({error:"No Apollo API key saved."}); return; }
+    headers["X-Api-Key"]=key;
+    var direct="https://api.apollo.io/api/v1/"+path;
+    urls=[direct,"https://corsproxy.io/?"+encodeURIComponent(direct)];
   }
 
-  fetch(target,opts)
-    .then(function(r){ return r.json().then(function(d){ return {ok:r.ok,d:d}; }); })
-    .then(function(res){
-      if(!res.ok && (res.d.error||"").toLowerCase().includes("cors")) return tryProxy();
-      cb(res.ok?res.d:(res.d.error?res.d:{error:"Apollo error"}));
-    })
-    .catch(tryProxy);
+  function tryNext(i){
+    if(i>=urls.length){ cb({error:"Cannot reach Apollo API."}); return; }
+    var opts={method:method,headers:headers};
+    if(body) opts.body=JSON.stringify(body);
+    fetch(urls[i],opts)
+      .then(function(r){ return r.json().then(function(d){ return {ok:r.ok,d:d}; }); })
+      .then(function(res){
+        if(!res.ok&&i<urls.length-1){ tryNext(i+1); return; }
+        cb(res.d);
+      })
+      .catch(function(){ tryNext(i+1); });
+  }
+  tryNext(0);
 }
 
 function apolloFetch(path,body,cb){ _apolloCall("POST",path,body,cb); }
