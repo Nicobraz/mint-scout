@@ -5177,7 +5177,7 @@ function enrichNearbyContact(ekey){
       manager:hasManager?info.manager:"",
       phone:info.phone||(person&&person.phone_numbers&&person.phone_numbers[0]?person.phone_numbers[0].sanitized_number:""),
       email:info.email||(person?person.email||"":""),
-      apolloId:person?(person.id||person.person_id||null):null,
+      apolloId:person?(person.contact_id||null):null,
       apolloName:person?((person.first_name||"")+" "+(person.last_name||"")).trim():"",
       apolloTitle:person?(person.title||""):"",
       apolloEmail:person?(person.email||""):"",
@@ -6406,6 +6406,7 @@ function confirmApolloSeq(){
     var label=item.manager&&item.manager!=="—"?item.manager:item.name;
     statusEl.textContent="Processing "+label+"... ("+i+"/"+toProcess.length+")";
 
+    // If we already have a verified CRM contact_id from enrichment, use it directly
     if(item.apolloId){ contactIds.push(item.apolloId); setTimeout(processNext,100); return; }
 
     var hasManager=item.manager&&item.manager!=="—"&&item.manager.trim().length>0;
@@ -6418,7 +6419,9 @@ function confirmApolloSeq(){
       var people=(!resp.error&&resp.people&&resp.people.length)?resp.people:null;
       if(people){
         var person=people[0];
+        // contact_id = already in your CRM → use directly
         if(person.contact_id){contactIds.push(person.contact_id);setTimeout(processNext,400);return;}
+        // person found but not yet a contact → create it
         var body={first_name:person.first_name||"",last_name:person.last_name||"",
           organization_name:person.organization_name||orgName,title:person.title||"Property Manager",run_dedupe:true};
         if(person.email) body.email=person.email;
@@ -6428,6 +6431,7 @@ function confirmApolloSeq(){
           setTimeout(processNext,400);
         });
       } else {
+        // No person found → create contact from what we have
         var body={first_name:"",last_name:"",organization_name:orgName,title:"Property Manager",run_dedupe:true};
         if(item.phone) body.direct_phone=item.phone;
         if(item.email) body.email=item.email;
