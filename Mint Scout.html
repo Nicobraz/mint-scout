@@ -658,6 +658,22 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
   <!-- Appointments -->
   <div id="nearby-appts-section" style="margin-bottom:16px"></div>
 
+  <!-- City Filter -->
+  <div style="margin-bottom:14px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <span style="font-weight:600;font-size:13px;color:#1a1a1a">🏙 City Filter</span>
+      <span id="nearby-city-filter-count" style="font-size:11px;color:#aaa"></span>
+      <button class="btn" style="background:#f0f0f0;color:#555;font-size:11px;padding:3px 8px;margin-left:auto" onclick="clearNearbyCityFilter()">Clear</button>
+    </div>
+    <div style="position:relative">
+      <input type="text" id="nearby-city-input" placeholder="Type a city to filter…" style="width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box" oninput="showNearbyCitySuggestions()" onkeydown="handleNearbyCityKey(event)" autocomplete="off">
+      <div id="nearby-city-suggestions" style="position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #ddd;border-top:none;border-radius:0 0 6px 6px;z-index:200;max-height:180px;overflow-y:auto;display:none"></div>
+    </div>
+    <div id="nearby-city-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+  </div>
+
+  <div style="border-top:1px solid #eee;margin-bottom:14px"></div>
+
   <!-- Quick DB Search -->
   <div style="margin-bottom:14px">
     <div style="font-weight:600;font-size:13px;color:#1a1a1a;margin-bottom:6px">Search Database</div>
@@ -670,13 +686,13 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
 
   <div style="border-top:1px solid #eee;margin-bottom:14px"></div>
 
-  <!-- Address Radius Search -->
+  <!-- Address / City Radius Search -->
   <div style="font-weight:600;font-size:13px;color:#1a1a1a;margin-bottom:6px">Search by Address Radius</div>
   <div class="nearby-input-row">
-    <input type="text" id="nearby-address" placeholder="e.g. 123 Main St, Salt Lake City, UT" onkeydown="if(event.key==='Enter')runNearbySearch()">
+    <input type="text" id="nearby-address" placeholder="Address or leave blank to search all filter cities" onkeydown="if(event.key==='Enter')runNearbySearch()">
     <input type="number" id="nearby-radius" value="5" min="1" max="50" step="0.5">
     <span style="font-size:12px;color:#666;white-space:nowrap">miles</span>
-    <button class="btn btn-green" onclick="runNearbySearch()">Find Nearby</button>
+    <button class="btn btn-green" onclick="runNearbySearch()">Search</button>
   </div>
   <div class="nearby-progress" id="nearby-progress"></div>
   <div id="nearby-map-wrap" style="display:none;margin-bottom:14px">
@@ -3529,7 +3545,7 @@ function showTab(tab) {
   if(tab==="players")  renderPlayers();
   if(tab==="clients")  renderClients();
   if(tab==="enriched") renderEnriched();
-  if(tab==="nearby")   renderNearbyAppts();
+  if(tab==="nearby")   { renderNearbyAppts(); renderNearbyCityChips(); runNearbyDBSearch(); }
   if(tab==="appts")    { renderCalAppts(); syncGoogleCalendar(true); }
   if(tab==="fillday")  renderFillMyDay();
   if(tab==="scoutrun") renderScoutRun();
@@ -5682,12 +5698,85 @@ function geocodeApptAddress(rawAddr, cb){
 
 var _nearbyActive=false;
 
+// ── CITY FILTER ──────────────────────────────────────────────────────────────
+var _nearbyCityFilter = [];
+try { var _ncf=localStorage.getItem("pmNearbyCityFilter"); if(_ncf) _nearbyCityFilter=JSON.parse(_ncf); } catch(e){}
+
+function saveNearbyCityFilter(){ try{ localStorage.setItem("pmNearbyCityFilter",JSON.stringify(_nearbyCityFilter)); }catch(e){} }
+
+function renderNearbyCityChips(){
+  var chips=document.getElementById("nearby-city-chips");
+  var count=document.getElementById("nearby-city-filter-count");
+  if(!chips) return;
+  if(!_nearbyCityFilter.length){ chips.innerHTML=""; if(count) count.textContent=""; return; }
+  if(count) count.textContent="("+_nearbyCityFilter.length+" active)";
+  chips.innerHTML=_nearbyCityFilter.map(function(c,i){
+    return '<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px 4px 12px;background:#E1F5EE;border:1px solid #b2dfc8;border-radius:20px;font-size:12px;color:#1D9E75;font-weight:500">'
+      +c+'<button onclick="removeNearbyCityFilter('+i+')" style="background:none;border:none;cursor:pointer;color:#5bb;font-size:14px;line-height:1;padding:0 0 0 4px;display:flex;align-items:center">×</button></span>';
+  }).join('');
+}
+
+function addNearbyCityFilter(city){
+  if(!city||_nearbyCityFilter.indexOf(city)>-1) return;
+  _nearbyCityFilter.push(city);
+  saveNearbyCityFilter();
+  renderNearbyCityChips();
+  runNearbyDBSearch();
+  var inp=document.getElementById("nearby-city-input");
+  if(inp){ inp.value=""; }
+  showNearbyCitySuggestions();
+}
+
+function removeNearbyCityFilter(i){
+  _nearbyCityFilter.splice(i,1);
+  saveNearbyCityFilter();
+  renderNearbyCityChips();
+  runNearbyDBSearch();
+}
+
+function clearNearbyCityFilter(){
+  _nearbyCityFilter=[];
+  saveNearbyCityFilter();
+  renderNearbyCityChips();
+  runNearbyDBSearch();
+  var inp=document.getElementById("nearby-city-input"); if(inp) inp.value="";
+  showNearbyCitySuggestions();
+}
+
+function showNearbyCitySuggestions(){
+  var inp=document.getElementById("nearby-city-input");
+  var box=document.getElementById("nearby-city-suggestions");
+  if(!inp||!box) return;
+  var q=(inp.value||"").trim().toLowerCase();
+  var allCities=[...new Set(getAllRows().map(function(r){ return r[2]; }).filter(Boolean))].sort();
+  var filtered=allCities.filter(function(c){ return (!q||c.toLowerCase().includes(q))&&_nearbyCityFilter.indexOf(c)===-1; });
+  if(!filtered.length||(!q&&!_nearbyCityFilter.length)){ box.style.display="none"; return; }
+  box.innerHTML=filtered.slice(0,12).map(function(c){
+    return '<div style="padding:7px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #f5f5f5" onmousedown="addNearbyCityFilter('+JSON.stringify(c)+')" onmouseover="this.style.background=\'#f5f5f5\'" onmouseout="this.style.background=\'\'">'+c+'</div>';
+  }).join('');
+  box.style.display="block";
+}
+
+function handleNearbyCityKey(e){
+  var inp=document.getElementById("nearby-city-input");
+  if(e.key==="Enter"){ e.preventDefault(); var v=(inp.value||"").trim(); if(v) addNearbyCityFilter(v); }
+  if(e.key==="Escape"){ document.getElementById("nearby-city-suggestions").style.display="none"; }
+}
+
+document.addEventListener("click",function(e){
+  var box=document.getElementById("nearby-city-suggestions");
+  var inp=document.getElementById("nearby-city-input");
+  if(box&&inp&&!inp.contains(e.target)&&!box.contains(e.target)) box.style.display="none";
+});
+
 function runNearbyDBSearch(){
   var q=document.getElementById("nearby-db-search").value.trim().toLowerCase();
   var wrap=document.getElementById("nearby-db-results");
-  if(!q){ wrap.innerHTML=""; return; }
+  if(!q&&!_nearbyCityFilter.length){ wrap.innerHTML=""; return; }
   var rows=getAllRows();
   var matches=rows.filter(function(r){
+    if(_nearbyCityFilter.length&&_nearbyCityFilter.indexOf(r[2])===-1) return false;
+    if(!q) return true;
     var d=propData[pkey(r)]||{};
     return r[0].toLowerCase().includes(q)||(d.manager||"").toLowerCase().includes(q)||(r[1]||"").toLowerCase().includes(q);
   });
@@ -5740,22 +5829,58 @@ function runNearbySearch(){
   _nearbyActive=false;
   var addr=document.getElementById("nearby-address").value.trim();
   var radius=parseFloat(document.getElementById("nearby-radius").value)||5;
-  if(!addr){ alert("Please enter an address."); return; }
 
   var prog=document.getElementById("nearby-progress");
   var wrap=document.getElementById("nearby-results");
-  wrap.innerHTML=""; prog.textContent="Geocoding your address...";
+  wrap.innerHTML=""; prog.textContent="Geocoding...";
   document.getElementById("nearby-map-wrap").style.display="none";
   if(_nearbyMap){ _nearbyMap.remove(); _nearbyMap=null; }
 
-  geocodeSingle(addr,function(origin){
-    if(!origin){
-      prog.textContent="Address not found. Try adding \", Utah\" or a zip code.";
-      return;
-    }
-    prog.textContent="Scanning properties...";
-    var rows=getAllRows();
-    renderNearbyResults(origin,radius,rows);
+  // If specific address entered, use it; otherwise geocode all filter cities
+  var targets=addr?[addr]:_nearbyCityFilter.map(function(c){ return c+", UT"; });
+  if(!targets.length){ prog.textContent="Enter an address or add cities to the filter."; return; }
+
+  var origins=[], done=0;
+  targets.forEach(function(t){
+    geocodeSingle(t,function(geo){
+      if(geo) origins.push({lat:geo.lat,lon:geo.lon,label:t});
+      if(++done===targets.length) _runNearbyFromOrigins(origins,radius);
+    });
+  });
+}
+
+function _runNearbyFromOrigins(origins,radius){
+  var prog=document.getElementById("nearby-progress");
+  if(!origins.length){ prog.textContent="Could not locate any of those cities. Try adding state (e.g. Salt Lake City, UT)."; return; }
+
+  // Use first origin for map center; filter rows within radius of ANY origin
+  var origin=origins[0];
+  prog.textContent="Scanning properties...";
+  var rows=getAllRows();
+
+  // When multiple origins, find rows within radius of any origin
+  if(origins.length>1){
+    var seen={}, combined=[];
+    origins.forEach(function(org){
+      var sub=rows.filter(function(r){
+        var k=pkey(r); if(seen[k]) return false;
+        var cc=UTAH_CITY_COORDS[r[2]]; if(!cc) return false;
+        if(haversine(org.lat,org.lon,cc.lat,cc.lon)>radius) return false;
+        seen[k]=true; return true;
+      }).map(function(r){
+        var cc=UTAH_CITY_COORDS[r[2]];
+        return {r:r,d:propData[pkey(r)]||{},dist:haversine(org.lat,org.lon,cc.lat,cc.lon),exact:false,coords:cc||null};
+      });
+      combined=combined.concat(sub);
+    });
+    combined.sort(function(a,b){ return a.dist-b.dist; });
+    _nearbyResults=combined;
+    renderNearbyResults(origin,radius,rows,combined);
+    prog.textContent="";
+    return;
+  }
+
+  renderNearbyResults(origin,radius,rows);
 
     // Collect uncached street addresses for properties whose city is plausibly nearby
     var toGeo=[], seen={};
@@ -5892,15 +6017,20 @@ function closeNearbyCardPanel(){
   closeModal("nearbyCard");
 }
 
-function renderNearbyResults(origin,radius,rows){
-  var results=[];
-  rows.forEach(function(r){
-    var info=getPropCoords(r);
-    if(!info||!info.coords) return;
-    var dist=haversine(origin.lat,origin.lon,info.coords.lat,info.coords.lon);
-    if(dist<=radius) results.push({r:r,d:propData[pkey(r)]||{},dist:dist,exact:info.exact,coords:info.coords});
-  });
-  results.sort(function(a,b){ return a.dist-b.dist; });
+function renderNearbyResults(origin,radius,rows,preResults){
+  var results;
+  if(preResults){
+    results=preResults;
+  } else {
+    results=[];
+    rows.forEach(function(r){
+      var info=getPropCoords(r);
+      if(!info||!info.coords) return;
+      var dist=haversine(origin.lat,origin.lon,info.coords.lat,info.coords.lon);
+      if(dist<=radius) results.push({r:r,d:propData[pkey(r)]||{},dist:dist,exact:info.exact,coords:info.coords});
+    });
+    results.sort(function(a,b){ return a.dist-b.dist; });
+  }
   _nearbyResults=results;
 
   var wrap=document.getElementById("nearby-results");
