@@ -480,6 +480,8 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
     </select>
     <button class="btn btn-primary" onclick="openModal('addProperty')">+ Add Account</button>
     <button class="btn btn-green"   onclick="openModal('addCompany')">+ Add Company</button>
+    <button class="btn" style="background:#e67e22;color:#fff;font-size:12px" onclick="document.getElementById('prop-email-csv-input').click()">📧 Import Emails</button>
+    <input type="file" id="prop-email-csv-input" accept=".csv" style="display:none" onchange="importPropertyEmails(this)">
     <span class="stat" id="map-stat"></span>
   </div>
   <div class="board" id="board"></div>
@@ -729,9 +731,12 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
 <div id="pane-enriched" style="display:none">
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
     <h2 style="font-size:16px;font-weight:600;color:#1a1a1a;flex:1;margin:0">✨ Leads</h2>
+    <button class="btn" style="background:#9b59b6;color:#fff;font-size:12px" onclick="document.getElementById('apollo-csv-input').click()">📥 Import Apollo CSV</button>
+    <input type="file" id="apollo-csv-input" accept=".csv" style="display:none" onchange="importApolloCsv(this)">
     <button class="btn" style="background:#1D9E75;color:#fff;font-size:12px;display:none" id="enriched-seq-btn" onclick="addEnrichedToSequence()">+ Add to Apollo Sequence</button>
     <button class="btn" style="background:#f0f0f0;color:#555;font-size:12px" onclick="clearAllEnriched()">Clear All</button>
   </div>
+  <div id="enriched-import-status" style="font-size:12px;color:#888;min-height:0;margin-bottom:4px"></div>
   <div id="enriched-stage-pills" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap"></div>
   <div id="enriched-list"></div>
 </div>
@@ -946,20 +951,15 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
 
 <!-- ENRICHED LEADS → APOLLO SEQUENCE MODAL -->
 <div class="modal-overlay" id="modal-apolloSeq" onclick="if(event.target===this)closeModal('apolloSeq')">
-  <div class="modal">
+  <div class="modal" style="max-width:420px">
     <h2>Add to Apollo Sequence</h2>
+    <div id="eq-seq-preview" style="font-size:12px;color:#555;background:#f8f9fa;border:1px solid #eee;border-radius:8px;padding:8px 12px;margin-bottom:14px;max-height:120px;overflow-y:auto"></div>
     <div class="modal-field">
       <div class="modal-label">Sequence</div>
       <select class="modal-input" id="eq-seq-select"><option value="">Loading...</option></select>
     </div>
-    <div id="eq-visit-date" style="font-size:12px;color:#1D9E75;padding:4px 0;font-weight:500"></div>
-    <div class="modal-field" style="margin-top:8px">
-      <div class="modal-label">Note to add to each contact</div>
-      <textarea id="eq-seq-message" class="modal-input" rows="4" placeholder="e.g. I have a window cleaning appointment nearby on Friday — great time to connect." style="resize:vertical;font-size:12px;line-height:1.5"></textarea>
-    </div>
     <div id="eq-seq-note" style="font-size:11px;color:#888;padding:4px 0"></div>
     <div id="eq-seq-status" style="font-size:12px;padding:4px 0;min-height:18px;word-break:break-word"></div>
-    <div style="font-size:11px;color:#bbb;padding:2px 0">Wrong key? <span style="cursor:pointer;color:#888;text-decoration:underline" onclick="closeModal('apolloSeq');openModal('apolloKey')">Update Apollo key</span> · <span style="cursor:pointer;color:#888;text-decoration:underline" onclick="openApolloSeqModal()">Retry</span></div>
     <div class="modal-actions">
       <button class="btn btn-cancel" onclick="closeModal('apolloSeq')">Cancel</button>
       <button class="btn btn-green" id="eq-seq-btn" onclick="confirmApolloSeq()">Add to Sequence</button>
@@ -6116,6 +6116,196 @@ var _enrichedFilter = "new";
 function loadEnriched(){ try{ var e=localStorage.getItem("pmEnriched"); if(e) enrichedContacts=JSON.parse(e); }catch(e){} }
 function saveEnriched(){ try{ localStorage.setItem("pmEnriched",JSON.stringify(enrichedContacts)); }catch(e){} }
 
+// ── CSV IMPORT (Apollo export) ─────────────────────────────────────────────
+function importApolloCsv(inputEl){
+  var file=inputEl.files[0]; if(!file) return;
+  var statusEl=document.getElementById("enriched-import-status");
+  statusEl.textContent="Reading file…";
+  var reader=new FileReader();
+  reader.onload=function(e){
+    var text=e.target.result;
+    try{
+      var lines=_csvParse(text);
+      if(lines.length<2){ statusEl.innerHTML="<span style='color:#c00'>CSV appears empty.</span>"; return; }
+      var headers=lines[0].map(function(h){ return h.trim(); });
+      function col(names){
+        for(var i=0;i<names.length;i++){
+          var idx=headers.findIndex(function(h){ return h.toLowerCase()===names[i].toLowerCase(); });
+          if(idx>-1) return idx;
+        }
+        return -1;
+      }
+      var iFirst=col(["First Name","first_name"]);
+      var iLast=col(["Last Name","last_name"]);
+      var iTitle=col(["Title","Job Title","title"]);
+      var iCompany=col(["Company","company"]);
+      var iEmail=col(["Email","email"]);
+      var iPhone=col(["Work Direct Phone","First Phone","Mobile Phone","Phone","phone"]);
+      var iLinkedIn=col(["Person Linkedin Url","LinkedIn URL","linkedin"]);
+      var iCity=col(["City","city","Company City"]);
+      var iState=col(["State","state"]);
+      var iContactId=col(["Apollo Contact Id","contact_id","Contact ID"]);
+
+      var added=0, dupes=0;
+      for(var r=1;r<lines.length;r++){
+        var row=lines[r]; if(!row.length||!row[0]) continue;
+        var firstName=iFirst>-1?(row[iFirst]||"").trim():"";
+        var lastName=iLast>-1?(row[iLast]||"").trim():"";
+        var name=(firstName+" "+lastName).trim()||"(Unknown)";
+        var company=iCompany>-1?(row[iCompany]||"").trim():"";
+        var title=iTitle>-1?(row[iTitle]||"").trim():"";
+        var email=iEmail>-1?(row[iEmail]||"").trim():"";
+        var phone=iPhone>-1?(row[iPhone]||"").trim():"";
+        var linkedin=iLinkedIn>-1?(row[iLinkedIn]||"").trim():"";
+        var city=iCity>-1?(row[iCity]||"").trim():"";
+        var state=iState>-1?(row[iState]||"").trim():"";
+        var apolloId=iContactId>-1?(row[iContactId]||"").trim():"";
+
+        // Skip if already imported (match by apolloId or name+company)
+        var exists=enrichedContacts.some(function(c){
+          if(apolloId&&c.apolloId&&c.apolloId===apolloId) return true;
+          return c.name===name&&(c.company||"")===(company||"");
+        });
+        if(exists){ dupes++; continue; }
+
+        enrichedContacts.push({
+          id:Date.now()+"_"+Math.random().toString(36).slice(2),
+          name:name, company:company, title:title,
+          email:email, phone:phone, linkedin:linkedin,
+          city:city, state:state,
+          apolloId:apolloId||null,
+          stage:"new", notes:"",
+          importedAt:new Date().toISOString(),
+          outreachAt:null, appointedAt:null
+        });
+        added++;
+      }
+      saveEnriched();
+      var msg=added+" lead"+(added===1?"":"s")+" imported";
+      if(dupes) msg+=", "+dupes+" duplicate"+(dupes===1?"":"s")+" skipped";
+      statusEl.innerHTML="<span style='color:#1D9E75'>✓ "+msg+"</span>";
+      setTimeout(function(){ statusEl.textContent=""; },4000);
+      renderEnriched();
+    }catch(err){
+      statusEl.innerHTML="<span style='color:#c00'>Parse error: "+err.message+"</span>";
+    }
+    inputEl.value="";
+  };
+  reader.readAsText(file);
+}
+
+function _csvParse(text){
+  var rows=[], cur=[], cell="", inQ=false;
+  for(var i=0;i<text.length;i++){
+    var ch=text[i];
+    if(inQ){
+      if(ch==='"'&&text[i+1]==='"'){cell+='"';i++;}
+      else if(ch==='"'){inQ=false;}
+      else{cell+=ch;}
+    } else {
+      if(ch==='"'){inQ=true;}
+      else if(ch===','){cur.push(cell);cell="";}
+      else if(ch==='\n'||(ch==='\r'&&text[i+1]==='\n')){
+        if(ch==='\r') i++;
+        cur.push(cell);cell="";
+        if(cur.some(function(c){return c;})) rows.push(cur);
+        cur=[];
+      } else {cell+=ch;}
+    }
+  }
+  if(cell||cur.length){cur.push(cell);if(cur.some(function(c){return c;})) rows.push(cur);}
+  return rows;
+}
+
+function importPropertyEmails(inputEl){
+  var file=inputEl.files[0]; if(!file) return;
+  var reader=new FileReader();
+  reader.onload=function(e){
+    var text=e.target.result;
+    try{
+      var lines=_csvParse(text);
+      if(lines.length<2){ alert("CSV appears empty."); return; }
+      var headers=lines[0].map(function(h){ return h.trim(); });
+      function col(names){
+        for(var i=0;i<names.length;i++){
+          var idx=headers.findIndex(function(h){ return h.toLowerCase()===names[i].toLowerCase(); });
+          if(idx>-1) return idx;
+        }
+        return -1;
+      }
+      var iName=col(["Property Name","property_name"]);
+      var iCompany=col(["Management Company","Company","company"]);
+      var iCity=col(["City","city"]);
+      var iEmail=col(["Campaign Email","email","Email"]);
+      if(iName===-1||iEmail===-1){ alert("CSV must have 'Property Name' and 'Campaign Email' columns."); return; }
+
+      function norm(s){ return (s||"").toLowerCase().replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim(); }
+
+      // Build name-keyed lookup from property database
+      var allRows=getAllRows();
+      var byName={};
+      allRows.forEach(function(r){
+        var n=norm(r[0]);
+        if(!byName[n]) byName[n]=[];
+        byName[n].push({k:pkey(r),r:r});
+      });
+
+      var updated=0, skipped=0, notFound=0, notFoundList=[];
+      for(var i=1;i<lines.length;i++){
+        var row=lines[i]; if(!row.length||!row[0]) continue;
+        var csvName=(row[iName]||"").trim();
+        var csvCompany=iCompany>-1?(row[iCompany]||"").trim():"";
+        var csvCity=iCity>-1?(row[iCity]||"").trim():"";
+        var csvEmail=(row[iEmail]||"").trim();
+        if(!csvEmail){ skipped++; continue; }
+
+        var nName=norm(csvName);
+        var nCompany=norm(csvCompany);
+        var nCity=norm(csvCity);
+        var candidates=byName[nName]||[];
+
+        var matchKey=null;
+        if(candidates.length===1){
+          matchKey=candidates[0].k;
+        } else if(candidates.length>1){
+          var byComp=candidates.filter(function(c){ return norm(c.r[1])===nCompany; });
+          if(byComp.length===1){ matchKey=byComp[0].k; }
+          else if(byComp.length>1){
+            var byCC=byComp.filter(function(c){ return norm(c.r[2])===nCity; });
+            matchKey=(byCC.length?byCC[0]:byComp[0]).k;
+          } else {
+            var byCit=candidates.filter(function(c){ return norm(c.r[2])===nCity; });
+            matchKey=(byCit.length?byCit[0]:candidates[0]).k;
+          }
+        }
+
+        if(matchKey){
+          if(!propData[matchKey]) propData[matchKey]={};
+          propData[matchKey].email=csvEmail;
+          updated++;
+        } else {
+          notFound++;
+          notFoundList.push(csvName);
+        }
+      }
+
+      saveAll();
+      renderMap();
+      var msg=updated+" propert"+(updated===1?"y":"ies")+" updated";
+      if(skipped) msg+=", "+skipped+" skipped (no email)";
+      if(notFound) msg+=", "+notFound+" not matched";
+      if(notFoundList.length){
+        msg+="\n\nNot matched:\n"+notFoundList.slice(0,15).join("\n");
+        if(notFoundList.length>15) msg+="\n…and "+(notFoundList.length-15)+" more";
+      }
+      alert("✓ "+msg);
+    }catch(err){ alert("Import error: "+err.message); }
+    inputEl.value="";
+  };
+  reader.readAsText(file);
+}
+
+// ── LEAD CARD RENDERER ────────────────────────────────────────────────────
 function renderEnriched(){
   var list=document.getElementById("enriched-list");
   var pillsEl=document.getElementById("enriched-stage-pills");
@@ -6125,7 +6315,7 @@ function renderEnriched(){
 
   if(!enrichedContacts.length){
     if(pillsEl) pillsEl.innerHTML="";
-    list.innerHTML='<div style="text-align:center;padding:48px;color:#aaa;font-size:13px"><div style="font-size:36px;margin-bottom:12px">✨</div><strong style="color:#888">No leads yet</strong><br><br><span style="font-size:12px">Go to the Nearby tab, open a result, and click <strong>Enrich</strong> on a contact.</span></div>';
+    list.innerHTML='<div style="text-align:center;padding:48px;color:#aaa;font-size:13px"><div style="font-size:36px;margin-bottom:12px">✨</div><strong style="color:#888">No leads yet</strong><br><br><span style="font-size:12px">Click <strong>Import Apollo CSV</strong> above to bring in your contact list.</span></div>';
     if(seqBtn) seqBtn.style.display="none";
     return;
   }
@@ -6174,7 +6364,7 @@ function renderEnriched(){
     html+='<div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">📅 '+dateLabel+(apptLabel?' — <span style="font-weight:500;text-transform:none;color:#555">'+apptLabel+'</span>':'')+'</div>';
     contacts.forEach(function(c){
       var stage=c.stage||"new";
-      var infoForSeq={name:c.name,company:c.company,city:c.city,manager:c.apolloName||c.manager||"—",phone:c.apolloPhone||c.phone||"",email:c.apolloEmail||c.email||"",apolloId:c.apolloId||""};
+      var infoForSeq={name:c.name,company:c.company,city:c.city,email:c.email||"",phone:c.phone||"",apolloId:c.apolloId||""};
       var infoJson=JSON.stringify(infoForSeq).replace(/"/g,"&quot;");
       var safeNotes=(c.notes||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
 
@@ -6184,8 +6374,11 @@ function renderEnriched(){
         html+='<input type="checkbox" class="nearby-chk nearby-row-chk" data-info="'+infoJson+'" onchange="updateEnrichedSeqBtn()" style="cursor:pointer;accent-color:#1D9E75;width:14px;height:14px;margin-top:3px;flex-shrink:0">';
       }
       html+='<div style="flex:1;min-width:0">';
+
+      // Name + stage badge
       html+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:2px">';
       html+='<div style="font-weight:700;font-size:13px">'+c.name+'</div>';
+      if(c.title) html+='<span style="font-size:11px;color:#888;font-style:italic">'+c.title+'</span>';
       if(stage==="outreach"){
         var outDate=c.outreachAt?new Date(c.outreachAt).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"";
         html+='<span style="background:#fff4e0;color:#c17f00;border-radius:10px;padding:2px 9px;font-size:10px;font-weight:600">Outreach Sent'+(outDate?" · "+outDate:"")+'</span>';
@@ -6194,21 +6387,27 @@ function renderEnriched(){
         html+='<span style="background:#e6f7f1;color:#157a52;border-radius:10px;padding:2px 9px;font-size:10px;font-weight:600">Appointed'+(aptDate?" · "+aptDate:"")+'</span>';
       }
       html+='</div>';
-      if(c.company) html+='<div style="font-size:11px;color:#666;margin-top:1px">'+c.company+(c.city?', '+c.city:'')+'</div>';
+
+      // Company + location
+      var loc=[c.company,c.city,c.state].filter(Boolean).join(", ");
+      if(loc) html+='<div style="font-size:11px;color:#666;margin-top:1px">'+loc+'</div>';
+
+      // Contact details
       html+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px">';
-      var contactName=c.apolloName||c.manager;
-      if(contactName) html+='<span style="font-size:11px;color:#333">👤 '+contactName+(c.apolloTitle?' · <em style="color:#888">'+c.apolloTitle+'</em>':'')+'</span>';
-      var email=c.apolloEmail||c.email;
-      if(email) html+='<a href="mailto:'+email+'" style="font-size:11px;color:#378ADD;text-decoration:none">✉ '+email+'</a>';
-      var phone=c.apolloPhone||c.phone;
-      if(phone) html+='<a href="tel:'+phone+'" style="font-size:11px;color:#1a1a1a;text-decoration:none">📞 '+phone+'</a>';
-      if(c.apolloLinkedIn) html+='<a href="'+c.apolloLinkedIn+'" target="_blank" style="font-size:11px;color:#0077b5;text-decoration:none">🔗 LinkedIn</a>';
+      if(c.email) html+='<a href="mailto:'+c.email+'" style="font-size:11px;color:#378ADD;text-decoration:none">✉ '+c.email+'</a>';
+      if(c.phone) html+='<a href="tel:'+c.phone+'" style="font-size:11px;color:#1a1a1a;text-decoration:none">📞 '+c.phone+'</a>';
+      if(c.linkedin) html+='<a href="'+c.linkedin+'" target="_blank" style="font-size:11px;color:#0077b5;text-decoration:none">🔗 LinkedIn</a>';
       html+='</div>';
+
+      // Appointment association
       if(c.apptSummary){
-        html+='<div style="font-size:10px;color:#aaa;margin-top:4px;font-style:italic">Near: '+c.apptSummary+(c.apptTime?' at '+c.apptTime:'')+(c.apptAddress?' · '+c.apptAddress:'')+'</div>';
+        html+='<div style="font-size:10px;color:#aaa;margin-top:4px;font-style:italic">📅 Near: '+c.apptSummary+(c.apptTime?' at '+c.apptTime:'')+(c.apptCity?' · '+c.apptCity:'')+'</div>';
       }
-      if(!c.apolloId) html+='<div style="font-size:10px;color:#f0a500;margin-top:3px">⚠ Not found in Apollo</div>';
+
+      // Notes
       html+='<textarea placeholder="Notes..." onblur="saveEnrichedNote(\''+c.id+'\',this.value)" style="margin-top:8px;width:100%;font-size:11px;border:1px solid #eee;border-radius:6px;padding:5px 8px;resize:vertical;min-height:34px;font-family:inherit;color:#444;box-sizing:border-box">'+safeNotes+'</textarea>';
+
+      // Stage actions
       html+='<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">';
       if(stage==="new"){
         html+='<button onclick="setEnrichedContactStage(\''+c.id+'\',\'outreach\')" style="padding:3px 11px;border:1px solid #f0a500;border-radius:6px;background:#fff;color:#c17f00;font-size:11px;font-weight:600;cursor:pointer">Mark Outreach Sent</button>';
@@ -6220,6 +6419,7 @@ function renderEnriched(){
         html+='<button onclick="setEnrichedContactStage(\''+c.id+'\',\'outreach\')" style="padding:3px 10px;border:none;background:none;color:#bbb;font-size:11px;cursor:pointer">↩ Back to Outreach</button>';
       }
       html+='</div>';
+
       html+='</div>';
       html+='<button onclick="removeEnrichedContact(\''+c.id+'\')" style="background:none;border:none;color:#ccc;font-size:16px;cursor:pointer;padding:0 2px;flex-shrink:0" title="Remove">×</button>';
       html+='</div></div>';
@@ -6298,30 +6498,32 @@ function _openApolloSeqModalWith(contacts){
   var note=document.getElementById("eq-seq-note");
   var statusEl=document.getElementById("eq-seq-status");
   var btn=document.getElementById("eq-seq-btn");
+  var preview=document.getElementById("eq-seq-preview");
   seqSel.innerHTML="<option>Loading sequences...</option>";
   note.textContent=""; statusEl.textContent="";
   btn.disabled=true; btn.textContent="Loading…";
 
-  var visitDateEl=document.getElementById("eq-visit-date");
-  var msgArea=document.getElementById("eq-seq-message");
-  if(_activeAppt){
-    var df=new Date(_activeAppt.date+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
-    visitDateEl.textContent="📅 Nearby visit: "+df+(_activeAppt.time?" at "+_activeAppt.time:"");
-    msgArea.value="I have a window cleaning appointment near your property on "+df+(_activeAppt.time?" at "+_activeAppt.time:"")+". Would love to connect!";
-  } else {
-    visitDateEl.textContent=""; msgArea.value="";
+  // Show contact preview
+  if(preview){
+    preview.innerHTML=contacts.map(function(c){
+      return '<div style="padding:3px 0;border-bottom:1px solid #f0f0f0;last-child:border-0">'
+        +'<strong>'+c.name+'</strong>'+(c.company?' · '+c.company:'')+(c.city?' · '+c.city:'')
+        +(c.email?' <span style="color:#888;font-size:11px">'+c.email+'</span>':'')
+        +(c.apolloId?' <span style="color:#1D9E75;font-size:10px">✓ ID</span>':'<span style="color:#aaa;font-size:10px"> (search required)</span>')
+        +'</div>';
+    }).join("");
   }
 
   openModal("apolloSeq");
   _apolloEmailAccountId=null;
   var _seqReady=false, _acctReady=false;
-  function _checkReady(){ if(_seqReady&&_acctReady){ btn.disabled=false; btn.textContent="Add to Sequence"; } }
+  function _checkReady(){ if(_seqReady&&_acctReady){ btn.disabled=false; btn.textContent="Add "+contacts.length+" to Sequence"; } }
 
   apolloFetch("emailer_campaigns/search",{per_page:100,page:1},function(resp){
     seqSel.innerHTML="";
     if(resp.error){
-      seqSel.innerHTML="<option>Error — see below</option>";
-      statusEl.innerHTML="<span style='color:#c00'>Sequences: "+resp.error+"</span>";
+      seqSel.innerHTML="<option>Error loading sequences</option>";
+      statusEl.innerHTML="<span style='color:#c00'>"+resp.error+"</span>";
       _seqReady=true; _checkReady(); return;
     }
     var list=resp.emailer_campaigns||[];
@@ -6331,8 +6533,8 @@ function _openApolloSeqModalWith(contacts){
       o.textContent=s.name+(s.active===false?" (paused)":"");
       seqSel.appendChild(o);
     });
-    var withMgr=_apolloSeqContacts.filter(function(c){return c.manager&&c.manager!=="—";});
-    note.textContent=withMgr.length+" of "+_apolloSeqContacts.length+" selected have a manager name.";
+    var withId=contacts.filter(function(c){return c.apolloId;}).length;
+    note.textContent=withId+" of "+contacts.length+" have Apollo IDs (direct); rest will be searched.";
     _seqReady=true; _checkReady();
   });
 
@@ -6362,43 +6564,28 @@ function confirmApolloSeq(){
         btn.disabled=false; btn.textContent="Add to Sequence"; return;
       }
 
-      function addNotesAndEnroll(){
-        statusEl.textContent="Adding "+contactIds.length+" contact(s) to sequence...";
-        var enrollBody={contact_ids:contactIds,emailer_campaign_id:seqId};
-        if(_apolloEmailAccountId) enrollBody.send_email_from_email_account_id=_apolloEmailAccountId;
-        apolloFetch("emailer_campaigns/"+seqId+"/add_contact_ids",enrollBody,function(resp){
-          btn.disabled=false; btn.textContent="Add to Sequence";
-          if(resp.error){
-            statusEl.innerHTML="<span style='color:#c00'>Error: "+resp.error+"</span>";
-          } else {
-            statusEl.innerHTML="<span style='color:#1D9E75'>✓ "+contactIds.length+" contact(s) added to sequence!</span>";
-            toProcess.forEach(function(item){
-              enrichedContacts.forEach(function(c){
-                var matchById=item.apolloId&&c.apolloId&&item.apolloId===c.apolloId;
-                var matchByName=!item.apolloId&&c.name===item.name&&(c.company||"")===(item.company||"");
-                if(matchById||matchByName){
-                  if(!c.stage||c.stage==="new"){c.stage="outreach";if(!c.outreachAt)c.outreachAt=new Date().toISOString();}
-                }
-              });
+      statusEl.textContent="Enrolling "+contactIds.length+" contact(s) in sequence...";
+      var enrollBody={contact_ids:contactIds,emailer_campaign_id:seqId};
+      if(_apolloEmailAccountId) enrollBody.send_email_from_email_account_id=_apolloEmailAccountId;
+      apolloFetch("emailer_campaigns/"+seqId+"/add_contact_ids",enrollBody,function(resp){
+        btn.disabled=false; btn.textContent="Add to Sequence";
+        if(resp.error){
+          statusEl.innerHTML="<span style='color:#c00'>Error: "+resp.error+"</span>";
+        } else {
+          statusEl.innerHTML="<span style='color:#1D9E75'>✓ "+contactIds.length+" contact(s) added to sequence!</span>";
+          toProcess.forEach(function(item){
+            enrichedContacts.forEach(function(c){
+              var matchById=item.apolloId&&c.apolloId&&item.apolloId===c.apolloId;
+              var matchByName=!item.apolloId&&c.name===item.name&&(c.company||"")===(item.company||"");
+              if(matchById||matchByName){
+                if(!c.stage||c.stage==="new"){c.stage="outreach";if(!c.outreachAt)c.outreachAt=new Date().toISOString();}
+              }
             });
-            saveEnriched();
-            setTimeout(function(){ closeModal("apolloSeq"); },2000);
-          }
-        });
-      }
-
-      var customMsg=(document.getElementById("eq-seq-message").value||"").trim();
-      if(customMsg){
-        var noteBody=customMsg;
-        if(_activeAppt){
-          var df=new Date(_activeAppt.date+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
-          noteBody+="\n\n— Appointment: "+(_activeAppt.summary||"")+" on "+df+(_activeAppt.time?" at "+_activeAppt.time:"")+"\n   Address: "+(_activeAppt.address||"");
+          });
+          saveEnriched();
+          setTimeout(function(){ closeModal("apolloSeq"); renderEnriched(); },2000);
         }
-        statusEl.textContent="Attaching note to contacts...";
-        var ni=0;
-        function postNextNote(){ if(ni>=contactIds.length){addNotesAndEnroll();return;} apolloFetch("notes",{contact_ids:[contactIds[ni]],body:noteBody},function(){ni++;setTimeout(postNextNote,300);}); }
-        postNextNote();
-      } else { addNotesAndEnroll(); }
+      });
       return;
     }
 
