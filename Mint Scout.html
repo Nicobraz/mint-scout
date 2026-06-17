@@ -5931,7 +5931,7 @@ function renderNearbyResults(origin,radius,rows){
   allChk.onchange=function(){ document.querySelectorAll(".nearby-row-chk").forEach(function(c){ c.checked=allChk.checked; }); };
   var thChk=document.createElement("th"); thChk.appendChild(allChk);
   var thead=document.createElement("thead"); var headTr=document.createElement("tr");
-  [thChk,"Dist","Property","Company","City","Address","Manager","Phone","Tags",""].forEach(function(h){
+  [thChk,"Dist","Property","Company","City","Address","Manager","Phone","Email","Tags",""].forEach(function(h){
     var th=typeof h==="string"?document.createElement("th"):h;
     if(typeof h==="string"){ th.textContent=h; th.style.cssText="padding:10px 10px;font-size:12px;font-weight:600;color:#888;text-align:left;border-bottom:2px solid #e0e0e0;white-space:nowrap"; }
     headTr.appendChild(th);
@@ -5994,6 +5994,8 @@ function renderNearbyResults(origin,radius,rows){
     var tdAddr=document.createElement("td"); tdAddr.style.cssText="font-size:12px;color:#555;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:12px 10px"; tdAddr.textContent=addr; tdAddr.title=addr;
     var tdMgr=document.createElement("td"); tdMgr.style.cssText="font-size:13px;color:#333;padding:12px 10px"; tdMgr.textContent=d.manager||"—";
     var tdPhone=document.createElement("td"); tdPhone.style.cssText="font-size:13px;color:#333;padding:12px 10px;white-space:nowrap"; tdPhone.textContent=phone||"—";
+    var tdEmail=document.createElement("td"); tdEmail.style.cssText="font-size:12px;padding:12px 10px;white-space:nowrap";
+    if(d.email){ var eLink=document.createElement("a"); eLink.href="mailto:"+d.email; eLink.textContent=d.email; eLink.style.cssText="color:#378ADD;text-decoration:none"; eLink.onclick=function(e){e.stopPropagation();}; tdEmail.appendChild(eLink); } else { tdEmail.textContent="—"; tdEmail.style.color="#ccc"; }
     var tdTags=document.createElement("td");
     (d.tags||[]).forEach(function(tk){
       var t=TAGS.find(function(tt){ return tt.key===tk; });
@@ -6016,7 +6018,7 @@ function renderNearbyResults(origin,radius,rows){
     if(!alreadyEnriched) enrichBtn.onclick=(function(k){ return function(){ enrichNearbyContact(k); }; })(ekey);
     tdEdit.appendChild(editBtn); tdEdit.appendChild(enrichBtn);
     tr.appendChild(tdChk); tr.appendChild(tdDist); tr.appendChild(tdName); tr.appendChild(tdCo);
-    tr.appendChild(tdCity); tr.appendChild(tdAddr); tr.appendChild(tdMgr); tr.appendChild(tdPhone); tr.appendChild(tdTags); tr.appendChild(tdEdit);
+    tr.appendChild(tdCity); tr.appendChild(tdAddr); tr.appendChild(tdMgr); tr.appendChild(tdPhone); tr.appendChild(tdEmail); tr.appendChild(tdTags); tr.appendChild(tdEdit);
 
     // Row click → open full card
     tr.style.cursor="pointer";
