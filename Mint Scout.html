@@ -5131,9 +5131,18 @@ function getWeekDates(offset){
   return days;
 }
 
+var _nearbyApptAddrs=[];
+function searchNearbyFromAppt(i){
+  var addr=_nearbyApptAddrs[i]; if(!addr) return;
+  document.getElementById("nearby-address").value=addr;
+  document.getElementById("nearby-radius").scrollIntoView&&document.getElementById("nearby-radius").scrollIntoView({behavior:"smooth",block:"nearest"});
+  runNearbySearch();
+}
+
 function renderNearbyAppts(){
   var wrap=document.getElementById("nearby-appts-section");
   if(!wrap) return;
+  _nearbyApptAddrs=[];
   var today=new Date(); today.setHours(0,0,0,0);
   var todayStr=today.toISOString().slice(0,10);
   var limitStr=new Date(today.getTime()+7*86400000).toISOString().slice(0,10);
@@ -5151,8 +5160,7 @@ function renderNearbyAppts(){
     var diff=Math.round((d-today)/86400000);
     var days=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
     var months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    var label=diff===0?"Today":diff===1?"Tomorrow":days[d.getDay()]+" "+months[d.getMonth()]+" "+d.getDate();
-    return label;
+    return diff===0?"Today":diff===1?"Tomorrow":days[d.getDay()]+" "+months[d.getMonth()]+" "+d.getDate();
   }
 
   var html='<div style="font-weight:600;font-size:13px;color:#1a1a1a;margin-bottom:8px">📅 Upcoming Appointments</div>';
@@ -5160,14 +5168,15 @@ function renderNearbyAppts(){
     var isToday=appt.date===todayStr;
     var border=isToday?"#1D9E75":"#e8e8e8";
     var bg=isToday?"#f0fdf8":"#fff";
-    var dateLabel=fmtDate(appt.date);
     html+='<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:'+bg+';border:1px solid '+border+';border-radius:8px;margin-bottom:6px;flex-wrap:wrap">';
-    html+='<div style="font-size:11px;font-weight:700;color:'+(isToday?"#1D9E75":"#888")+';;white-space:nowrap;min-width:80px">'+dateLabel+'</div>';
+    html+='<div style="font-size:11px;font-weight:700;color:'+(isToday?"#1D9E75":"#888")+';white-space:nowrap;min-width:80px">'+fmtDate(appt.date)+'</div>';
     if(appt.time) html+='<div style="font-size:11px;color:#888;white-space:nowrap;min-width:60px">'+appt.time+'</div>';
     html+='<div style="font-size:12px;font-weight:600;color:#1a1a1a;flex:1;min-width:120px">'+appt.summary+'</div>';
     if(appt.address){
+      var idx=_nearbyApptAddrs.length;
+      _nearbyApptAddrs.push(appt.address);
       html+='<div style="font-size:11px;color:#555;flex:2;min-width:120px">📍 '+appt.address+'</div>';
-      html+='<button class="btn" style="font-size:11px;background:#f0f0f0;color:#555;padding:4px 10px;white-space:nowrap" onclick="document.getElementById(\'nearby-address\').value='+JSON.stringify(appt.address)+';runNearbySearch()">Search Nearby</button>';
+      html+='<button class="btn" style="font-size:11px;background:#1D9E75;color:#fff;padding:4px 10px;white-space:nowrap" onclick="searchNearbyFromAppt('+idx+')">🔍 Search Nearby</button>';
     }
     html+='</div>';
   });
