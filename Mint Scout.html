@@ -184,35 +184,6 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
 .hover-pop { position:fixed; z-index:1500; width:310px; pointer-events:auto; box-shadow:0 8px 32px rgba(0,0,0,0.18); border-radius:12px; animation:hoverPopIn .15s ease; }
 @keyframes hoverPopIn { from { opacity:0; transform:translateY(-5px) scale(.97); } to { opacity:1; transform:translateY(0) scale(1); } }
 
-/* SCOUT RUN */
-.sr-header { background:linear-gradient(135deg,#1D9E75 0%,#159060 100%); border-radius:14px; padding:22px 26px; color:#fff; margin-bottom:18px; }
-.sr-greeting { font-size:24px; font-weight:800; letter-spacing:-.5px; margin:4px 0 6px; }
-.sr-date { font-size:11px; opacity:.75; text-transform:uppercase; letter-spacing:.08em; }
-.sr-sub { font-size:13px; opacity:.9; }
-.sr-stats { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:10px; margin-bottom:18px; }
-.sr-stat { background:#fff; border:1px solid #e8e8e8; border-radius:10px; padding:12px 14px; display:flex; align-items:center; gap:10px; cursor:pointer; transition:box-shadow .15s; }
-.sr-stat:hover { box-shadow:0 3px 12px rgba(0,0,0,0.1); }
-.sr-stat-icon { font-size:22px; line-height:1; }
-.sr-stat-num { font-size:22px; font-weight:800; line-height:1; }
-.sr-stat-lbl { font-size:11px; color:#888; margin-top:2px; }
-.sr-section-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; margin:16px 0 8px 2px; display:flex; align-items:center; gap:6px; }
-.sr-card { background:#fff; border:1px solid #eee; border-radius:10px; padding:12px 16px; margin-bottom:8px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; transition:box-shadow .15s; }
-.sr-card:hover { box-shadow:0 2px 10px rgba(0,0,0,0.08); }
-.sr-card-left { flex:1; min-width:0; }
-.sr-card-type { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px; }
-.sr-card-name { font-size:13px; font-weight:600; color:#1a1a1a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.sr-card-detail { font-size:11px; color:#888; margin-top:2px; }
-.sr-card-actions { display:flex; gap:6px; flex-wrap:wrap; flex-shrink:0; }
-.sr-btn { padding:5px 11px; border-radius:7px; font-size:11px; font-weight:600; border:none; cursor:pointer; white-space:nowrap; text-decoration:none; display:inline-block; }
-.sr-btn-call { background:#1D9E75; color:#fff; }
-.sr-btn-call:hover { background:#17885f; }
-.sr-btn-sched { background:#f0f0f0; color:#555; }
-.sr-btn-sched:hover { background:#e4e4e4; }
-.sr-btn-done { background:#eafaf4; color:#1D9E75; border:1px solid #b2dfc8; }
-.sr-btn-done:hover { background:#d4f4e8; }
-.sr-empty { text-align:center; padding:56px 20px; color:#aaa; }
-.sr-empty-icon { font-size:52px; margin-bottom:14px; }
-
 /* STREET VIEW */
 .sv-toggle-btn { width:100%; padding:7px; background:#f0f6ff; border:1px dashed #aac8f0; border-radius:6px; color:#378ADD; font-size:12px; font-weight:500; cursor:pointer; text-align:center; transition:background .15s; }
 .sv-toggle-btn:hover { background:#e0eeff; }
@@ -450,7 +421,6 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
   <button class="tab-btn" id="btn-enriched" onclick="showTab('enriched')">✨ Leads</button>
   <button class="tab-btn" id="btn-appts"    onclick="showTab('appts')">📅 Appointments</button>
   <button class="tab-btn" id="btn-fillday"  onclick="showTab('fillday')">🗓 Fill My Day</button>
-  <button class="tab-btn" id="btn-scoutrun" onclick="showTab('scoutrun')" style="font-weight:700;color:#1D9E75">⚡ Scout Run</button>
 </div>
 
 <div class="app-shell">
@@ -758,6 +728,10 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
     <span id="appts-sync-status" style="font-size:11px;color:#888"></span>
   </div>
   <div id="appts-pane-list"></div>
+  <div style="margin-top:16px;border-top:1px solid #eee;padding-top:14px">
+    <div style="font-size:12px;font-weight:600;color:#666;margin-bottom:8px;letter-spacing:.03em">GOOGLE CALENDAR</div>
+    <iframe src="https://calendar.google.com/calendar/embed?src=services%40dirtymint.com&ctz=America%2FDenver&showTitle=0&showNav=1&showDate=1&showPrint=0&showTabs=0&showCalendars=0&mode=WEEK" style="border:1px solid #e0e0e0;border-radius:8px;width:100%;min-height:520px;display:block" frameborder="0" scrolling="no"></iframe>
+  </div>
 </div>
 
 <!-- APPOINTMENT LEADS MODAL -->
@@ -3521,7 +3495,7 @@ function getAllRows() {
 
 // ── TAB SWITCHING ─────────────────────────────────────────────────────────
 function showTab(tab) {
-  ["dash","map","players","clients","nearby","enriched","appts","fillday","scoutrun"].forEach(function(t) {
+  ["dash","map","players","clients","nearby","enriched","appts","fillday"].forEach(function(t) {
     document.getElementById("pane-"+t).style.display=(t===tab)?"":"none";
     document.getElementById("btn-"+t).classList[(t===tab)?"add":"remove"]("active");
   });
@@ -3532,7 +3506,6 @@ function showTab(tab) {
   if(tab==="nearby")   renderNearbyAppts();
   if(tab==="appts")    { renderCalAppts(); syncGoogleCalendar(true); }
   if(tab==="fillday")  renderFillMyDay();
-  if(tab==="scoutrun") renderScoutRun();
 }
 
 // ── CITIES ────────────────────────────────────────────────────────────────
@@ -4978,7 +4951,7 @@ function syncGoogleCalendar(silentIfEmpty){
   if(status) status.textContent="Syncing…";
   var fetchUrl=isLocalhost()
     ? "/fetch?url="+encodeURIComponent(url)
-    : "/fetch?url="+encodeURIComponent(url);
+    : "https://corsproxy.io/?"+encodeURIComponent(url);
   fetch(fetchUrl)
     .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.code); return r.text(); })
     .then(function(text){
@@ -8169,192 +8142,7 @@ function importBackup(evt) {
   reader.readAsText(file);
 }
 
-// ── SCOUT RUN ─────────────────────────────────────────────────────────────
-function renderScoutRun(){
-  var wrap=document.getElementById("scoutrun-content");
-  if(!wrap) return;
-  wrap.innerHTML="";
-
-  var today=_localToday();
-  var rows=getAllRows();
-  var clientKeys=(customData.clientProps||[]).map(function(cp){ return cp.key; });
-
-  // Today's appointments (manual + gcal)
-  var todayAppts=calAppts.filter(function(a){ return a.date===today; });
-  var todayGcal=gcalEvents.filter(function(a){ return a.date===today; });
-  var allTodayAppts=todayAppts.concat(todayGcal).sort(function(a,b){ return (a.time24||"").localeCompare(b.time24||""); });
-
-  var actions=[];
-
-  // ── 1. Appointments today ─────────────────────────────────────
-  allTodayAppts.forEach(function(a){
-    actions.push({ pri:1, icon:"📅", type:"Appointment Today", name:a.summary||"Appointment",
-      detail:(a.time?"at "+a.time:"All day")+(a.address?" · "+a.address:""),
-      phone:a.phone||"", address:a.address||"", color:"#e74c3c", bg:"#fff8f8" });
-  });
-
-  // ── 2. Estimates pending (sent but not closed / not a client yet) ─────────
-  rows.forEach(function(r){
-    var k=pkey(r); var d=propData[k]||{};
-    var tags=d.tags||[];
-    if(tags.indexOf("estimate-sent")===-1) return;
-    if(clientKeys.indexOf(k)>-1) return; // already a client
-    var daysAgo=d.lastContacted?Math.floor((Date.now()-new Date(d.lastContacted))/86400000):null;
-    actions.push({ pri:1, icon:"💰", type:"Estimate Pending", name:r[0], company:r[1]||"",
-      detail:daysAgo?"Estimate sent · "+daysAgo+"d since last contact":"Estimate sent — needs follow-up",
-      phone:d.phone||"", color:"#9b59b6", bg:"#fdf5ff", key:k, row:r });
-  });
-
-  // ── 3. Overdue follow-ups (30+ days since last contact) ──────────────────
-  rows.forEach(function(r){
-    var k=pkey(r); var d=propData[k]||{};
-    if(!d.lastContacted||(d.tags||[]).indexOf("estimate-sent")>-1) return; // estimates handled above
-    var daysAgo=Math.floor((Date.now()-new Date(d.lastContacted))/86400000);
-    if(daysAgo<30) return;
-    actions.push({ pri:daysAgo>=60?1:2, icon:"⏰", type:"Overdue Follow-up",
-      name:r[0], company:r[1]||"", detail:daysAgo+"d since last contact — time to reach out",
-      phone:d.phone||"", color:daysAgo>=60?"#e74c3c":"#f39c12", bg:daysAgo>=60?"#fff8f8":"#fffbf0", key:k, row:r });
-  });
-
-  // ── 4. No-answer Apify leads — worth retrying ────────────────────────────
-  googleLeads.filter(function(l){ return l.status==="noanswer"&&l.phone; }).slice(0,6).forEach(function(l){
-    actions.push({ pri:2, icon:"📵", type:"No Answer — Try Again",
-      name:l.name, company:l.category||"", detail:(l.city||l.address||"")+" · Try calling again",
-      phone:l.phone, color:"#e67e22", bg:"#fffaf4", leadId:l.id });
-  });
-
-  // ── 5. Interested Apify leads — follow up ───────────────────────────────
-  googleLeads.filter(function(l){ return l.status==="interested"&&l.phone; }).slice(0,5).forEach(function(l){
-    actions.push({ pri:2, icon:"🔥", type:"Interested — Close It",
-      name:l.name, company:l.category||"", detail:(l.city||"")+(l.notes?" · "+l.notes:""),
-      phone:l.phone, color:"#e74c3c", bg:"#fff8f8", leadId:l.id });
-  });
-
-  // ── 6. Fresh Apify cold calls ────────────────────────────────────────────
-  googleLeads.filter(function(l){ return l.status==="new"&&l.phone; }).slice(0,5).forEach(function(l){
-    actions.push({ pri:3, icon:"📞", type:"Cold Call",
-      name:l.name, company:l.category||"", detail:(l.city||l.address||""),
-      phone:l.phone, color:"#1D9E75", bg:"#f4fbf8", leadId:l.id });
-  });
-
-  // ── 7. PM properties with phone but never contacted ─────────────────────
-  var pmCold=rows.filter(function(r){
-    var d=propData[pkey(r)]||{};
-    return d.phone&&!(d.tags||[]).length&&!d.lastContacted;
-  }).slice(0,5);
-  pmCold.forEach(function(r){
-    var d=propData[pkey(r)]||{};
-    actions.push({ pri:3, icon:"🏢", type:"Never Contacted",
-      name:r[0], company:r[1]||"", detail:r[2]||"", phone:d.phone,
-      color:"#378ADD", bg:"#f0f6ff", key:pkey(r), row:r });
-  });
-
-  actions.sort(function(a,b){ return a.pri-b.pri; });
-
-  // ── Header ────────────────────────────────────────────────────────────────
-  var now=new Date();
-  var DAYS=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-  var MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  var h=now.getHours();
-  var greeting=h<12?"Good morning":h<17?"Good afternoon":"Good evening";
-  var hdr=document.createElement("div"); hdr.className="sr-header";
-  hdr.innerHTML='<div class="sr-date">'+DAYS[now.getDay()]+' · '+MONTHS[now.getMonth()]+' '+now.getDate()+'</div>'
-    +'<div class="sr-greeting">'+greeting+', Nico 🌿</div>'
-    +'<div class="sr-sub">'+(actions.length?actions.length+' things need your attention':"You're all caught up — great work! 🎉")+'</div>';
-  wrap.appendChild(hdr);
-
-  // ── Stat cards ────────────────────────────────────────────────────────────
-  var stats=document.createElement("div"); stats.className="sr-stats";
-  var overdueCt=actions.filter(function(a){ return a.type==="Overdue Follow-up"; }).length;
-  var estimateCt=actions.filter(function(a){ return a.type==="Estimate Pending"; }).length;
-  var freshCt=googleLeads.filter(function(l){ return l.status==="new"; }).length;
-  [
-    {n:allTodayAppts.length, lbl:"Appts Today",      icon:"📅", color:"#e74c3c", tab:"appts"},
-    {n:overdueCt,            lbl:"Overdue Follow-ups",icon:"⏰", color:"#f39c12", tab:null},
-    {n:estimateCt,           lbl:"Estimates Out",     icon:"💰", color:"#9b59b6", tab:null},
-    {n:freshCt,              lbl:"Fresh Leads",       icon:"📋", color:"#1D9E75", tab:"gleads"}
-  ].forEach(function(s){
-    var c=document.createElement("div"); c.className="sr-stat";
-    if(s.tab) c.onclick=function(){ showTab(s.tab); };
-    c.innerHTML='<div class="sr-stat-icon">'+s.icon+'</div>'
-      +'<div><div class="sr-stat-num" style="color:'+s.color+'">'+s.n+'</div><div class="sr-stat-lbl">'+s.lbl+'</div></div>';
-    stats.appendChild(c);
-  });
-  wrap.appendChild(stats);
-
-  if(!actions.length){
-    var em=document.createElement("div"); em.className="sr-empty";
-    em.innerHTML='<div class="sr-empty-icon">🏆</div><strong style="color:#1a1a1a;font-size:17px">Nothing left to do today!</strong><br><br style="line-height:2">Add contacts, schedule appointments,<br>or import leads to build your action list.';
-    wrap.appendChild(em); return;
-  }
-
-  // ── Priority sections ─────────────────────────────────────────────────────
-  var sections=[
-    {pri:1, label:"🔴 Must Do Today",   color:"#e74c3c"},
-    {pri:2, label:"🟡 Should Do Today", color:"#e67e22"},
-    {pri:3, label:"🟢 Nice to Do",      color:"#1D9E75"}
-  ];
-
-  sections.forEach(function(sec){
-    var grp=actions.filter(function(a){ return a.pri===sec.pri; });
-    if(!grp.length) return;
-
-    var lbl=document.createElement("div"); lbl.className="sr-section-label";
-    lbl.style.color=sec.color; lbl.textContent=sec.label;
-    wrap.appendChild(lbl);
-
-    grp.forEach(function(a){
-      var card=document.createElement("div"); card.className="sr-card";
-      card.style.borderLeftColor=a.color; card.style.borderLeftWidth="4px"; card.style.background=a.bg;
-
-      var left=document.createElement("div"); left.className="sr-card-left";
-      if(a.key){
-        left.style.cursor="pointer"; left.title="Open full card";
-        left.onclick=(function(k){ return function(e){
-          if(e.target.closest("button,a")) return;
-          openLeadCard(k);
-        }; })(a.key);
-      }
-      var typeDiv=document.createElement("div"); typeDiv.className="sr-card-type"; typeDiv.style.color=a.color;
-      typeDiv.textContent=a.icon+" "+a.type;
-      var nameDiv=document.createElement("div"); nameDiv.className="sr-card-name";
-      nameDiv.textContent=a.name+(a.company?" · "+a.company:"");
-      var detDiv=document.createElement("div"); detDiv.className="sr-card-detail"; detDiv.textContent=a.detail||"";
-      left.appendChild(typeDiv); left.appendChild(nameDiv); left.appendChild(detDiv);
-
-      var btns=document.createElement("div"); btns.className="sr-card-actions";
-
-      if(a.phone){
-        var cb=document.createElement("a"); cb.href="tel:"+a.phone; cb.className="sr-btn sr-btn-call"; cb.textContent="📞 Call"; btns.appendChild(cb);
-      }
-      if(a.row||a.key){
-        var sb=document.createElement("button"); sb.className="sr-btn sr-btn-sched"; sb.textContent="📅 Schedule";
-        sb.onclick=(function(row,k){ return function(){
-          var dd=propData[k]||{}; openApptModalForProperty(row?row[0]:"", dd.address||(row?row[3]||"":""), k);
-        }; })(a.row,a.key);
-        btns.appendChild(sb);
-      }
-      if(a.leadId){
-        var db=document.createElement("button"); db.className="sr-btn sr-btn-done"; db.textContent="✓ Called";
-        db.onclick=(function(id){ return function(){ gleadSetStatus(id,"called"); renderScoutRun(); }; })(a.leadId);
-        btns.appendChild(db);
-      }
-      if(a.type==="Overdue Follow-up"&&a.key){
-        var mb=document.createElement("button"); mb.className="sr-btn sr-btn-done"; mb.textContent="✓ Contacted";
-        mb.onclick=(function(k){ return function(){
-          if(!propData[k]) propData[k]={};
-          if(!propData[k].tags) propData[k].tags=[];
-          if(propData[k].tags.indexOf("contacted")===-1) propData[k].tags.push("contacted");
-          propData[k].lastContacted=today; saveAll(); renderScoutRun();
-        }; })(a.key);
-        btns.appendChild(mb);
-      }
-
-      card.appendChild(left); if(btns.children.length) card.appendChild(btns);
-      wrap.appendChild(card);
-    });
-  });
-}
+function renderScoutRun(){}
 
 // ── FOLLOW-UP CHECK-INS ───────────────────────────────────────────────────
 var _fuQueue=[];
@@ -8483,10 +8271,6 @@ attachAddressAutocomplete("new-prop-address");
 attachAddressAutocomplete("fillday-address");
 </script>
 
-<!-- SCOUT RUN PANE -->
-<div id="pane-scoutrun" style="display:none">
-  <div id="scoutrun-content"></div>
-</div>
 
 </div><!-- /.app-shell -->
 </body>
