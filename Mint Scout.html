@@ -4969,26 +4969,28 @@ function syncGoogleCalendar(silentIfEmpty){
   var nearbyStatus=document.getElementById("nearby-gcal-status");
   if(status) status.textContent="Syncing…";
   if(nearbyStatus) nearbyStatus.textContent="Syncing…";
-  var fetchUrl=isLocalhost()
-    ? "/fetch?url="+encodeURIComponent(url)
-    : "https://corsproxy.io/?"+encodeURIComponent(url);
-  fetch(fetchUrl)
-    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.code); return r.text(); })
-    .then(function(text){
-      var events=parseICS(text);
-      gcalEvents=events;
-      saveGcalEvents();
-      renderCalAppts();
-      var msg=events.length+" Google events loaded";
-      if(status){ status.textContent=msg; setTimeout(function(){ status.textContent=""; },3000); }
-      if(nearbyStatus){ nearbyStatus.textContent=msg; setTimeout(function(){ nearbyStatus.textContent=""; },3000); }
-    })
-    .catch(function(e){
-      var errMsg="Cal sync failed";
-      if(status&&!silentIfEmpty){ status.textContent=errMsg; setTimeout(function(){ status.textContent=""; },4000); }
-      if(nearbyStatus&&!silentIfEmpty){ nearbyStatus.textContent=errMsg; setTimeout(function(){ nearbyStatus.textContent=""; },4000); }
-      renderCalAppts();
-    });
+  function doSync(fetchUrl){
+    return fetch(fetchUrl)
+      .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.text(); })
+      .then(function(text){
+        var events=parseICS(text);
+        gcalEvents=events;
+        saveGcalEvents();
+        renderCalAppts();
+        var msg=events.length+" Google events loaded";
+        if(status){ status.textContent=msg; setTimeout(function(){ status.textContent=""; },3000); }
+        if(nearbyStatus){ nearbyStatus.textContent=msg; setTimeout(function(){ nearbyStatus.textContent=""; },3000); }
+      });
+  }
+  var primaryUrl="/fetch?url="+encodeURIComponent(url);
+  var fallbackUrl="https://corsproxy.io/?"+encodeURIComponent(url);
+  doSync(primaryUrl).catch(function(){
+    return doSync(fallbackUrl);
+  }).catch(function(){
+    if(status&&!silentIfEmpty){ status.textContent="Cal sync failed"; setTimeout(function(){ status.textContent=""; },4000); }
+    if(nearbyStatus&&!silentIfEmpty){ nearbyStatus.textContent="Cal sync failed"; setTimeout(function(){ nearbyStatus.textContent=""; },4000); }
+    renderCalAppts();
+  });
 }
 
 function openApptModalForProperty(name, addr, propKey){

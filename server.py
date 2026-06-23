@@ -25,6 +25,23 @@ def index():
     return send_file(HTML_FILE)
 
 
+@app.route("/fetch")
+def fetch_proxy():
+    url = request.args.get("url", "")
+    if not url:
+        return Response("Missing url param", status=400)
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            content_type = resp.headers.get("Content-Type", "text/plain")
+            return Response(resp.read(), status=200, headers={
+                "Content-Type": content_type,
+                "Access-Control-Allow-Origin": "*",
+            })
+    except Exception as ex:
+        return Response(str(ex), status=500, headers={"Access-Control-Allow-Origin": "*"})
+
+
 @app.route("/apollo/<path:path>", methods=["GET", "POST", "OPTIONS"])
 def apollo_proxy(path):
     if request.method == "OPTIONS":
