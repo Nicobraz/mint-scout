@@ -5949,14 +5949,10 @@ function renderNearbyResults(origin,radius,rows){
   btnClients.textContent="Add to Current Clients"; btnClients.onclick=addNearbyToClients;
   var btnCSV=document.createElement("button"); btnCSV.className="btn"; btnCSV.style.cssText="background:#378ADD;color:#fff;display:none";
   btnCSV.textContent="Export CSV"; btnCSV.onclick=exportNearbyCSV;
-  var btnSeq=document.createElement("button"); btnSeq.className="btn"; btnSeq.style.cssText="background:#f0a500;color:#fff;display:none";
-  btnSeq.textContent="Add to Sequence"; btnSeq.onclick=openApolloExportModal;
   var btnClear=document.createElement("button"); btnClear.style.cssText="background:none;border:none;color:#888;font-size:11px;cursor:pointer;padding:0 4px;display:none";
   btnClear.textContent="× Clear"; btnClear.onclick=function(){ document.querySelectorAll(".nearby-row-chk").forEach(function(c){ c.checked=false; c.closest("tr").classList.remove("nearby-row-checked"); }); allChk.checked=false; updateNearbySelBar(); };
-  var keyLink=document.createElement("button"); keyLink.style.cssText="background:none;border:none;color:#ccc;font-size:10px;cursor:pointer;padding:0;margin-left:auto";
-  keyLink.textContent="⚙ Apollo key"; keyLink.onclick=function(){ openModal("apolloKey"); };
   var hint=document.createElement("span"); hint.style.cssText="color:#aaa;font-size:11px"; hint.id="nearby-sel-hint"; hint.textContent="Check rows to select";
-  selBar.appendChild(selCount); selBar.appendChild(btnClients); selBar.appendChild(btnCSV); selBar.appendChild(btnSeq); selBar.appendChild(btnClear); selBar.appendChild(hint); selBar.appendChild(keyLink);
+  selBar.appendChild(selCount); selBar.appendChild(btnClients); selBar.appendChild(btnCSV); selBar.appendChild(btnClear); selBar.appendChild(hint);
   frag.appendChild(selBar);
 
   function updateNearbySelBar(){
@@ -5965,7 +5961,7 @@ function renderNearbyResults(origin,radius,rows){
     selCount.textContent=checked+" of "+total+" selected";
     var hasSel=checked>0;
     selBar.classList[hasSel?"add":"remove"]("has-sel");
-    [btnClients,btnCSV,btnSeq,btnClear].forEach(function(b){ b.style.display=hasSel?"":"none"; });
+    [btnClients,btnCSV,btnClear].forEach(function(b){ b.style.display=hasSel?"":"none"; });
     hint.style.display=hasSel?"none":"";
     allChk.checked=hasSel&&checked===total;
   }
