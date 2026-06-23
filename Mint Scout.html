@@ -655,6 +655,8 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
 <div id="pane-nearby" style="display:none">
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
     <h2 style="font-size:16px;font-weight:700;color:#1a1a1a;flex:1;margin:0">📍 Nearby</h2>
+    <span id="nearby-gcal-status" style="font-size:11px;color:#aaa"></span>
+    <button class="btn" style="font-size:11px;padding:4px 10px;background:#f0f0f0;color:#555" onclick="syncGoogleCalendar();setTimeout(renderNearbyAppts,1500)">↻ Sync Cal</button>
     <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:6px">
       Radius
       <input type="number" id="nearby-radius" value="5" min="1" max="50" step="0.5" style="width:54px;padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;text-align:center">
@@ -4964,7 +4966,9 @@ function parseICS(text){
 function syncGoogleCalendar(silentIfEmpty){
   var url=getCalICSUrl();
   var status=document.getElementById("appts-sync-status");
+  var nearbyStatus=document.getElementById("nearby-gcal-status");
   if(status) status.textContent="Syncing…";
+  if(nearbyStatus) nearbyStatus.textContent="Syncing…";
   var fetchUrl=isLocalhost()
     ? "/fetch?url="+encodeURIComponent(url)
     : "https://corsproxy.io/?"+encodeURIComponent(url);
@@ -4975,14 +4979,14 @@ function syncGoogleCalendar(silentIfEmpty){
       gcalEvents=events;
       saveGcalEvents();
       renderCalAppts();
-      if(status){
-        status.textContent=events.length+" calendar events synced";
-        setTimeout(function(){ status.textContent=""; },3000);
-      }
+      var msg=events.length+" Google events loaded";
+      if(status){ status.textContent=msg; setTimeout(function(){ status.textContent=""; },3000); }
+      if(nearbyStatus){ nearbyStatus.textContent=msg; setTimeout(function(){ nearbyStatus.textContent=""; },3000); }
     })
     .catch(function(e){
-      if(status&&!silentIfEmpty) status.textContent="Sync failed — check proxy is running";
-      setTimeout(function(){ if(status) status.textContent=""; },4000);
+      var errMsg="Cal sync failed";
+      if(status&&!silentIfEmpty){ status.textContent=errMsg; setTimeout(function(){ status.textContent=""; },4000); }
+      if(nearbyStatus&&!silentIfEmpty){ nearbyStatus.textContent=errMsg; setTimeout(function(){ nearbyStatus.textContent=""; },4000); }
       renderCalAppts();
     });
 }
@@ -8474,6 +8478,8 @@ checkFollowUps();
 attachAddressAutocomplete("nearby-address");
 attachAddressAutocomplete("new-prop-address");
 attachAddressAutocomplete("fillday-address");
+// Auto-sync Google Calendar on load so gcalEvents are available everywhere
+syncGoogleCalendar(true);
 </script>
 
 
