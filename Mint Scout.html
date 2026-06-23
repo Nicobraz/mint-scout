@@ -391,6 +391,34 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
   .btn { padding: 8px 12px; }
   #nearby-map { height: 220px !important; }
 }
+/* OUTREACH FLOW */
+.flow-stage-pill { display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.03em; }
+.flow-pill-research { background:#e8f2ff;color:#378ADD; }
+.flow-pill-email    { background:#fff4d9;color:#d18a00; }
+.flow-pill-call     { background:#f5eeff;color:#8b42d1; }
+.flow-pill-appointed     { background:#eafaf4;color:#1D9E75; }
+.flow-pill-not_interested { background:#fdecea;color:#c0392b; }
+.flow-pill-no_contact     { background:#f0f0f0;color:#888; }
+.flow-card { background:#fff;border:1px solid #e8e8e8;border-radius:10px;padding:14px 16px;margin-bottom:8px;display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;transition:box-shadow .15s; }
+.flow-card:hover { box-shadow:0 2px 10px rgba(0,0,0,0.07); }
+.flow-card-left { flex:1;min-width:0; }
+.flow-card-name { font-size:14px;font-weight:700;color:#1a1a1a;margin-bottom:2px; }
+.flow-card-sub { font-size:12px;color:#888; }
+.flow-card-notes { font-size:12px;color:#555;margin-top:6px;border:none;width:100%;resize:none;background:transparent;outline:none;font-family:inherit; }
+.flow-card-actions { display:flex;gap:6px;flex-wrap:wrap;flex-shrink:0;align-items:center; }
+.flow-btn { padding:5px 11px;border-radius:7px;font-size:11px;font-weight:600;border:none;cursor:pointer;white-space:nowrap; }
+.flow-btn-research { background:#378ADD;color:#fff; }
+.flow-btn-email    { background:#f0a500;color:#fff; }
+.flow-btn-call     { background:#8b42d1;color:#fff; }
+.flow-btn-appointed    { background:#1D9E75;color:#fff; }
+.flow-btn-decline  { background:#fdecea;color:#c0392b;border:1px solid #f5c6c6; }
+.flow-btn-nocontact { background:#f0f0f0;color:#666;border:1px solid #ddd; }
+.flow-btn-reset    { background:#f8f8f8;color:#888;border:1px solid #ddd; }
+.flow-filter-bar { display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center; }
+.flow-filter-pill { padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1px solid #e0e0e0;background:#f8f8f8;color:#666;cursor:pointer;transition:all .15s; }
+.flow-filter-pill.active { background:#1a1a1a;color:#fff;border-color:#1a1a1a; }
+.flow-add-btn-nearby { padding:3px 8px;font-size:10px;font-weight:700;border-radius:6px;border:1px solid #378ADD;background:#e8f2ff;color:#378ADD;cursor:pointer;white-space:nowrap; }
+.flow-add-btn-nearby.in-flow { background:#1D9E75;border-color:#1D9E75;color:#fff;cursor:default; }
 </style>
 </head>
 <body>
@@ -421,6 +449,7 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
   <button class="tab-btn" id="btn-enriched" onclick="showTab('enriched')">✨ Leads</button>
   <button class="tab-btn" id="btn-appts"    onclick="showTab('appts')">📅 Appointments</button>
   <button class="tab-btn" id="btn-fillday"  onclick="showTab('fillday')">🗓 Fill My Day</button>
+  <button class="tab-btn" id="btn-flow"     onclick="showTab('flow')">🔄 Flow</button>
 </div>
 
 <div class="app-shell">
@@ -3495,7 +3524,7 @@ function getAllRows() {
 
 // ── TAB SWITCHING ─────────────────────────────────────────────────────────
 function showTab(tab) {
-  ["dash","map","players","clients","nearby","enriched","appts","fillday"].forEach(function(t) {
+  ["dash","map","players","clients","nearby","enriched","appts","fillday","flow"].forEach(function(t) {
     document.getElementById("pane-"+t).style.display=(t===tab)?"":"none";
     document.getElementById("btn-"+t).classList[(t===tab)?"add":"remove"]("active");
   });
@@ -3506,6 +3535,7 @@ function showTab(tab) {
   if(tab==="nearby")   renderNearbyAppts();
   if(tab==="appts")    { renderCalAppts(); syncGoogleCalendar(true); }
   if(tab==="fillday")  renderFillMyDay();
+  if(tab==="flow")     renderFlowTab();
 }
 
 // ── CITIES ────────────────────────────────────────────────────────────────
@@ -5989,7 +6019,16 @@ function renderNearbyResults(origin,radius,rows){
       :"background:none;border:1px solid #1D9E75;border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;color:#1D9E75;font-weight:600";
     enrichBtn.textContent=alreadyEnriched?"✓ Enriched":"Enrich";
     if(!alreadyEnriched) enrichBtn.onclick=(function(k){ return function(){ enrichNearbyContact(k); }; })(ekey);
-    tdEdit.appendChild(editBtn); tdEdit.appendChild(enrichBtn);
+    var sk=pkey(r);
+    var inFlow=outreachContacts.some(function(c){ return c.sourceKey===sk||(c.name===r[0]&&c.city===(r[2]||"")); });
+    var flowBtn=document.createElement("button");
+    flowBtn.className="flow-add-btn-nearby"+(inFlow?" in-flow":"");
+    flowBtn.textContent=inFlow?"✓ In Flow":"＋ Flow";
+    if(!inFlow) flowBtn.onclick=(function(row,btn){ return function(){
+      addToOutreachFlow(row);
+      btn.textContent="✓ In Flow"; btn.className="flow-add-btn-nearby in-flow"; btn.onclick=null;
+    }; })(r,flowBtn);
+    tdEdit.appendChild(editBtn); tdEdit.appendChild(enrichBtn); tdEdit.appendChild(flowBtn);
     tr.appendChild(tdChk); tr.appendChild(tdDist); tr.appendChild(tdName); tr.appendChild(tdCo);
     tr.appendChild(tdCity); tr.appendChild(tdAddr); tr.appendChild(tdMgr); tr.appendChild(tdPhone); tr.appendChild(tdEmail); tr.appendChild(tdTags); tr.appendChild(tdEdit);
 
@@ -8257,12 +8296,197 @@ function skipFollowUp(){
   else closeModal("followUp");
 }
 
+// ── OUTREACH FLOW ─────────────────────────────────────────────────────────
+var outreachContacts=[];
+var _flowFilter="all";
+
+function loadOutreachFlow(){ try{ var s=localStorage.getItem("pmOutreachFlow"); if(s) outreachContacts=JSON.parse(s); }catch(e){} }
+function saveOutreachFlow(){ try{ localStorage.setItem("pmOutreachFlow",JSON.stringify(outreachContacts)); }catch(e){} }
+
+var FLOW_STAGES=[
+  {key:"research",   label:"Research",       btnLabel:"✉ Mark Emailed",        nextStage:"email",   btnClass:"flow-btn-research"},
+  {key:"email",      label:"Email Sent",     btnLabel:"📞 Mark Called",         nextStage:"call",    btnClass:"flow-btn-email"},
+  {key:"call",       label:"Called",         btnLabel:null,                     nextStage:null,      btnClass:null},
+  {key:"appointed",  label:"Appointment Set",btnLabel:null,                     nextStage:null,      btnClass:null},
+  {key:"not_interested",label:"Not Interested",btnLabel:null,                   nextStage:null,      btnClass:null},
+  {key:"no_contact", label:"No Contact",     btnLabel:null,                     nextStage:null,      btnClass:null}
+];
+
+function addToOutreachFlow(row){
+  var sk=pkey(row);
+  var dup=outreachContacts.some(function(c){ return c.sourceKey===sk||(c.name===row[0]&&c.city===(row[2]||"")); });
+  if(dup) return;
+  var d=propData[sk]||{};
+  var phone=[d.phone,d.phone2].filter(Boolean).join(" / ")||"";
+  outreachContacts.push({
+    id:(crypto.randomUUID?crypto.randomUUID():Date.now()+Math.random().toString(36)),
+    name:row[0]||"", company:row[1]||"", city:row[2]||"",
+    address:row[3]||d.address||"", phone:phone, email:d.email||"",
+    notes:"", stage:"research", outcome:null,
+    addedAt:new Date().toISOString(), sourceKey:sk
+  });
+  saveOutreachFlow();
+}
+
+function setFlowStage(id, stage, outcome){
+  var c=outreachContacts.find(function(x){ return x.id===id; });
+  if(!c) return;
+  c.stage=stage;
+  c.outcome=outcome||null;
+  saveOutreachFlow();
+  renderFlowTab();
+}
+
+function removeFromFlow(id){
+  outreachContacts=outreachContacts.filter(function(c){ return c.id!==id; });
+  saveOutreachFlow();
+  renderFlowTab();
+}
+
+function openAddToFlowModal(){
+  ["flow-add-name","flow-add-company","flow-add-phone","flow-add-email","flow-add-city","flow-add-notes"].forEach(function(id){
+    document.getElementById(id).value="";
+  });
+  openModal("flowAdd");
+}
+
+function saveFlowAddModal(){
+  var name=document.getElementById("flow-add-name").value.trim();
+  if(!name){ alert("Name is required."); return; }
+  outreachContacts.push({
+    id:(crypto.randomUUID?crypto.randomUUID():Date.now()+Math.random().toString(36)),
+    name:name,
+    company:document.getElementById("flow-add-company").value.trim(),
+    phone:document.getElementById("flow-add-phone").value.trim(),
+    email:document.getElementById("flow-add-email").value.trim(),
+    city:document.getElementById("flow-add-city").value.trim(),
+    notes:document.getElementById("flow-add-notes").value.trim(),
+    stage:"research", outcome:null,
+    addedAt:new Date().toISOString(), sourceKey:""
+  });
+  saveOutreachFlow();
+  closeModal("flowAdd");
+  renderFlowTab();
+}
+
+function renderFlowTab(){
+  var FILTER_OPTIONS=[
+    {key:"all",          label:"All"},
+    {key:"research",     label:"Research"},
+    {key:"email",        label:"Email Sent"},
+    {key:"call",         label:"Called"},
+    {key:"outcomes",     label:"Outcomes"}
+  ];
+
+  var filterBar=document.getElementById("flow-filter-bar");
+  filterBar.innerHTML="";
+  FILTER_OPTIONS.forEach(function(f){
+    var p=document.createElement("button");
+    p.className="flow-filter-pill"+(_flowFilter===f.key?" active":"");
+    p.textContent=f.label;
+    p.onclick=function(){ _flowFilter=f.key; renderFlowTab(); };
+    filterBar.appendChild(p);
+  });
+
+  var list=document.getElementById("flow-list");
+  list.innerHTML="";
+
+  var isOutcome=function(c){ return c.stage==="appointed"||c.stage==="not_interested"||c.stage==="no_contact"; };
+
+  var filtered=outreachContacts.filter(function(c){
+    if(_flowFilter==="all") return true;
+    if(_flowFilter==="outcomes") return isOutcome(c);
+    return c.stage===_flowFilter;
+  });
+
+  document.getElementById("flow-count").textContent=filtered.length+" contact"+(filtered.length===1?"":"s");
+
+  if(!filtered.length){
+    list.innerHTML="<div style='text-align:center;color:#aaa;padding:40px;font-size:13px'>"
+      +(_flowFilter==="all"?"No contacts in flow yet. Add from <strong>Nearby</strong> search or use the ＋ Add Contact button.":"No contacts at this stage.")
+      +"</div>";
+    return;
+  }
+
+  filtered.slice().reverse().forEach(function(c){
+    var card=document.createElement("div"); card.className="flow-card";
+
+    var left=document.createElement("div"); left.className="flow-card-left";
+    var nameLine=document.createElement("div"); nameLine.className="flow-card-name";
+    var stageCls="flow-pill-"+c.stage;
+    var stageInfo=FLOW_STAGES.find(function(s){ return s.key===c.stage; });
+    nameLine.textContent=c.name;
+    var badge=document.createElement("span"); badge.className="flow-stage-pill "+stageCls;
+    badge.textContent=stageInfo?stageInfo.label:c.stage;
+    badge.style.marginLeft="8px";
+    nameLine.appendChild(badge);
+    left.appendChild(nameLine);
+
+    var sub=document.createElement("div"); sub.className="flow-card-sub";
+    var parts=[];
+    if(c.company) parts.push(c.company);
+    if(c.city) parts.push(c.city);
+    if(c.phone) parts.push(c.phone);
+    if(c.email) parts.push(c.email);
+    sub.textContent=parts.join(" · ")||"";
+    left.appendChild(sub);
+
+    var notesEl=document.createElement("textarea"); notesEl.className="flow-card-notes";
+    notesEl.placeholder="Add notes…"; notesEl.value=c.notes||"";
+    notesEl.rows=1;
+    notesEl.onchange=(function(id){ return function(){ var contact=outreachContacts.find(function(x){return x.id===id;}); if(contact){contact.notes=this.value; saveOutreachFlow();} }; })(c.id);
+    left.appendChild(notesEl);
+    card.appendChild(left);
+
+    var actions=document.createElement("div"); actions.className="flow-card-actions";
+
+    if(c.stage==="research"){
+      var b=document.createElement("button"); b.className="flow-btn flow-btn-research";
+      b.textContent="✉ Mark Emailed";
+      b.onclick=(function(id){ return function(){ setFlowStage(id,"email",null); }; })(c.id);
+      actions.appendChild(b);
+    } else if(c.stage==="email"){
+      var b=document.createElement("button"); b.className="flow-btn flow-btn-email";
+      b.textContent="📞 Mark Called";
+      b.onclick=(function(id){ return function(){ setFlowStage(id,"call",null); }; })(c.id);
+      actions.appendChild(b);
+    } else if(c.stage==="call"){
+      var b1=document.createElement("button"); b1.className="flow-btn flow-btn-appointed";
+      b1.textContent="📅 Appt Set";
+      b1.onclick=(function(id){ return function(){ setFlowStage(id,"appointed","appointed"); }; })(c.id);
+      var b2=document.createElement("button"); b2.className="flow-btn flow-btn-decline";
+      b2.textContent="❌ Not Interested";
+      b2.onclick=(function(id){ return function(){ setFlowStage(id,"not_interested","not_interested"); }; })(c.id);
+      var b3=document.createElement("button"); b3.className="flow-btn flow-btn-nocontact";
+      b3.textContent="📵 No Contact";
+      b3.onclick=(function(id){ return function(){ setFlowStage(id,"no_contact","no_contact"); }; })(c.id);
+      actions.appendChild(b1); actions.appendChild(b2); actions.appendChild(b3);
+    } else if(isOutcome(c)){
+      var rb=document.createElement("button"); rb.className="flow-btn flow-btn-reset";
+      rb.textContent="↩ Reset to Called";
+      rb.onclick=(function(id){ return function(){ setFlowStage(id,"call",null); }; })(c.id);
+      actions.appendChild(rb);
+    }
+
+    var del=document.createElement("button");
+    del.style.cssText="background:none;border:none;color:#ddd;font-size:16px;cursor:pointer;padding:0 4px;margin-left:4px;line-height:1";
+    del.textContent="🗑";
+    del.title="Remove from flow";
+    del.onclick=(function(id){ return function(){ if(confirm("Remove this contact from the flow?")) removeFromFlow(id); }; })(c.id);
+    actions.appendChild(del);
+
+    card.appendChild(actions);
+    list.appendChild(card);
+  });
+}
+
 // ── INIT ──────────────────────────────────────────────────────────────────
 loadAll();
 loadGeoCache();
 loadCalAppts();
 loadGoogleLeads();
 loadEnriched();
+loadOutreachFlow();
 populateCities();
 renderMap();
 checkFollowUps();
@@ -8271,6 +8495,43 @@ attachAddressAutocomplete("new-prop-address");
 attachAddressAutocomplete("fillday-address");
 </script>
 
+
+<!-- FLOW PANE -->
+<div id="pane-flow" style="display:none">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+    <h2 style="font-size:16px;font-weight:700;color:#1a1a1a;flex:1;margin:0">🔄 Outreach Flow</h2>
+    <span id="flow-count" style="font-size:12px;color:#aaa"></span>
+    <button class="btn btn-primary" style="font-size:12px" onclick="openAddToFlowModal()">＋ Add Contact</button>
+  </div>
+  <div class="flow-filter-bar" id="flow-filter-bar"></div>
+  <div id="flow-list"></div>
+</div>
+
+<!-- FLOW ADD MODAL -->
+<div class="modal-overlay" id="modal-flowAdd" onclick="if(event.target===this)closeModal('flowAdd')">
+  <div class="modal" style="max-width:420px;width:95vw">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <span style="font-size:16px;font-weight:700">Add to Flow</span>
+      <button style="background:none;border:none;font-size:20px;cursor:pointer;color:#aaa;line-height:1" onclick="closeModal('flowAdd')">&times;</button>
+    </div>
+    <div class="modal-label">Name / Property</div>
+    <input class="modal-input" id="flow-add-name" placeholder="e.g. Sunrise Apartments">
+    <div class="modal-label" style="margin-top:10px">Company</div>
+    <input class="modal-input" id="flow-add-company" placeholder="Management company">
+    <div class="modal-label" style="margin-top:10px">Phone</div>
+    <input class="modal-input" id="flow-add-phone" type="tel" placeholder="">
+    <div class="modal-label" style="margin-top:10px">Email</div>
+    <input class="modal-input" id="flow-add-email" type="email" placeholder="">
+    <div class="modal-label" style="margin-top:10px">City</div>
+    <input class="modal-input" id="flow-add-city" placeholder="">
+    <div class="modal-label" style="margin-top:10px">Notes</div>
+    <textarea class="modal-input" id="flow-add-notes" rows="2" placeholder="" style="resize:vertical"></textarea>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn btn-primary" style="flex:1" onclick="saveFlowAddModal()">Add to Flow</button>
+      <button class="btn" onclick="closeModal('flowAdd')">Cancel</button>
+    </div>
+  </div>
+</div>
 
 </div><!-- /.app-shell -->
 </body>
