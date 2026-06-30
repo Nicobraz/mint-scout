@@ -448,6 +448,7 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
   <button class="tab-btn" id="btn-nearby"   onclick="showTab('nearby')">📍 Nearby</button>
   <button class="tab-btn" id="btn-enriched" onclick="showTab('enriched')">✨ Leads</button>
   <button class="tab-btn" id="btn-appts"    onclick="showTab('appts')">📅 Appointments</button>
+  <button class="tab-btn" id="btn-gcal"     onclick="showTab('gcal')">📆 Google Cal</button>
   <button class="tab-btn" id="btn-fillday"  onclick="showTab('fillday')">🗓 Fill My Day</button>
   <button class="tab-btn" id="btn-flow"     onclick="showTab('flow')">🔄 Flow</button>
 </div>
@@ -745,10 +746,17 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
     <span id="appts-sync-status" style="font-size:11px;color:#888"></span>
   </div>
   <div id="appts-pane-list"></div>
-  <div style="margin-top:16px;border-top:1px solid #eee;padding-top:14px">
-    <div style="font-size:12px;font-weight:600;color:#666;margin-bottom:8px;letter-spacing:.03em">GOOGLE CALENDAR</div>
-    <iframe src="https://calendar.google.com/calendar/embed?src=services%40dirtymint.com&ctz=America%2FDenver&showTitle=0&showNav=1&showDate=1&showPrint=0&showTabs=0&showCalendars=0&mode=WEEK" style="border:1px solid #e0e0e0;border-radius:8px;width:100%;min-height:520px;display:block" frameborder="0" scrolling="no"></iframe>
+</div>
+
+<!-- GOOGLE CAL TAB -->
+<div id="pane-gcal" style="display:none">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+    <h2 style="font-size:16px;font-weight:600;color:#1a1a1a;flex:1">📆 Google Calendar</h2>
+    <button class="btn btn-primary" style="font-size:12px" onclick="syncGoogleCalendar();showTab('appts')">↻ Import to Appointments</button>
+    <button class="btn" style="background:none;border:none;color:#bbb;font-size:11px;cursor:pointer;padding:0" onclick="openModal('calSync')">⚙ Cal URL</button>
   </div>
+  <p style="font-size:12px;color:#888;margin:0 0 12px">View your Google Calendar below. Click <strong>Import to Appointments</strong> to sync events into the Appointments tab where you can click, edit, and find leads.</p>
+  <iframe src="https://calendar.google.com/calendar/embed?src=services%40dirtymint.com&ctz=America%2FDenver&showTitle=0&showNav=1&showDate=1&showPrint=0&showTabs=0&showCalendars=0&mode=WEEK" style="border:1px solid #e0e0e0;border-radius:10px;width:100%;min-height:600px;display:block" frameborder="0" scrolling="no"></iframe>
 </div>
 
 <!-- APPOINTMENT LEADS MODAL -->
@@ -833,6 +841,64 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
     <div class="modal-actions">
       <button class="btn btn-cancel" onclick="closeModal('appt')">Cancel</button>
       <button class="btn btn-green" onclick="saveAppt()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- APPOINTMENT DETAIL / EDIT MODAL -->
+<div class="modal-overlay" id="modal-apptDetail" style="z-index:1200" onclick="if(event.target===this)closeModal('apptDetail')">
+  <div class="modal" style="max-width:440px">
+    <!-- VIEW MODE -->
+    <div id="ad-view">
+      <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px">
+        <div style="flex:1;min-width:0">
+          <h2 id="ad-title" style="font-size:15px;font-weight:600;color:#1a1a1a;margin:0 0 4px;word-break:break-word"></h2>
+          <span id="ad-badge" style="display:none;background:#378ADD;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px">📅 Google Calendar</span>
+        </div>
+        <button onclick="closeModal('apptDetail')" style="background:none;border:none;font-size:20px;color:#bbb;cursor:pointer;padding:0;line-height:1;flex-shrink:0">×</button>
+      </div>
+      <div id="ad-meta-time" style="font-size:13px;color:#444;margin-bottom:4px"></div>
+      <div id="ad-meta-date" style="font-size:12px;color:#888;margin-bottom:6px"></div>
+      <div id="ad-meta-address" style="font-size:12px;color:#555;margin-bottom:6px;display:none"></div>
+      <div id="ad-meta-notes" style="font-size:12px;color:#666;white-space:pre-wrap;margin-bottom:6px;display:none"></div>
+      <div id="ad-gcal-notice" style="display:none;background:#fff8e1;border:1px solid #ffe082;border-radius:6px;padding:7px 10px;font-size:11px;color:#856404;margin-bottom:10px">📅 Google Calendar event — edits are saved locally only and won't sync back to GCal.</div>
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+        <button class="btn btn-primary" style="font-size:12px" onclick="_adEnterEdit()">✏ Edit</button>
+        <button class="btn btn-green" style="font-size:12px" id="ad-leads-btn" onclick="closeModal('apptDetail');openApptLeadsModal(_adAppt)">🗺 Find Leads</button>
+        <button class="btn" id="ad-delete-btn" style="background:#fee2e2;color:#dc2626;font-size:12px;margin-left:auto" onclick="_adDelete()">Delete</button>
+      </div>
+    </div>
+    <!-- EDIT MODE -->
+    <div id="ad-edit" style="display:none">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <h2 style="font-size:15px;font-weight:600;color:#1a1a1a;margin:0;flex:1">Edit Appointment</h2>
+        <button onclick="closeModal('apptDetail')" style="background:none;border:none;font-size:20px;color:#bbb;cursor:pointer;padding:0;line-height:1">×</button>
+      </div>
+      <div id="ad-edit-gcal-notice" style="display:none;background:#fff8e1;border:1px solid #ffe082;border-radius:6px;padding:7px 10px;font-size:11px;color:#856404;margin-bottom:10px">Edits are saved locally only and won't sync back to Google Calendar.</div>
+      <div class="modal-field">
+        <div class="modal-label">Title</div>
+        <input class="modal-input" id="ad-f-title" placeholder="Title...">
+      </div>
+      <div class="modal-field">
+        <div class="modal-label">Date</div>
+        <input class="modal-input" id="ad-f-date" type="date">
+      </div>
+      <div class="modal-field">
+        <div class="modal-label">Time <span style="color:#bbb;font-size:10px">(optional)</span></div>
+        <input class="modal-input" id="ad-f-time" type="time">
+      </div>
+      <div class="modal-field">
+        <div class="modal-label">Address</div>
+        <input class="modal-input" id="ad-f-address" placeholder="Street address...">
+      </div>
+      <div class="modal-field">
+        <div class="modal-label">Notes <span style="color:#bbb;font-size:10px">(optional)</span></div>
+        <textarea class="modal-input" id="ad-f-notes" rows="3" style="resize:vertical" placeholder="Notes..."></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-cancel" onclick="_adCancelEdit()">Cancel</button>
+        <button class="btn btn-green" onclick="_adSave()">Save</button>
+      </div>
     </div>
   </div>
 </div>
@@ -3512,7 +3578,7 @@ function getAllRows() {
 
 // ── TAB SWITCHING ─────────────────────────────────────────────────────────
 function showTab(tab) {
-  ["dash","map","players","clients","nearby","enriched","appts","fillday","flow"].forEach(function(t) {
+  ["dash","map","players","clients","nearby","enriched","appts","gcal","fillday","flow"].forEach(function(t) {
     document.getElementById("pane-"+t).style.display=(t===tab)?"":"none";
     document.getElementById("btn-"+t).classList[(t===tab)?"add":"remove"]("active");
   });
@@ -4891,16 +4957,21 @@ function renderDash() {
 // ── CALENDAR APPOINTMENTS ─────────────────────────────────────────────────
 var calAppts=[];
 var gcalEvents=[];
+var gcalOverrides={};
 
 function loadCalAppts(){
   try{ var c=localStorage.getItem("pmSchedule"); if(c) calAppts=JSON.parse(c); }catch(e){}
   try{ var g=localStorage.getItem("pmGcalEvents"); if(g) gcalEvents=JSON.parse(g); }catch(e){}
+  try{ var o=localStorage.getItem("pmGcalOverrides"); if(o) gcalOverrides=JSON.parse(o); }catch(e){}
 }
 function saveCalAppts(){
   try{ localStorage.setItem("pmSchedule",JSON.stringify(calAppts)); }catch(e){}
 }
 function saveGcalEvents(){
   try{ localStorage.setItem("pmGcalEvents",JSON.stringify(gcalEvents)); }catch(e){}
+}
+function saveGcalOverrides(){
+  try{ localStorage.setItem("pmGcalOverrides",JSON.stringify(gcalOverrides)); }catch(e){}
 }
 
 function getCalICSUrl(){
@@ -4958,7 +5029,8 @@ function parseICS(text){
     var location=get("LOCATION").replace(/\\,/g,",").replace(/\\n/g," ");
     var desc=get("DESCRIPTION").replace(/\\,/g,",").replace(/\\n/g,"\n");
     if(!summary) continue;
-    events.push({ date:dt.date, time24:dt.time24, time:dt.time, summary:summary, address:location, notes:desc, gcal:true });
+    var uid=get("UID")||"";
+    events.push({ date:dt.date, time24:dt.time24, time:dt.time, summary:summary, address:location, notes:desc, gcal:true, _gcalUid:uid });
   }
   return events;
 }
@@ -5177,9 +5249,13 @@ function renderNearbyAppts(){
   wrap.innerHTML=html;
 }
 
+var _calBlockStore=[];
+function openCalBlock(i){ var d=_calBlockStore[i]; if(d) openApptDetail(d.appt,d.isGcal); }
+
 function renderCalAppts(){
   var wrap=document.getElementById("appts-pane-list");
   if(!wrap) return;
+  _calBlockStore=[];
   var days=getWeekDates(_calWeekOffset);
   var today=new Date().toISOString().slice(0,10);
   var DAY_NAMES=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
@@ -5240,7 +5316,13 @@ function renderCalAppts(){
     var dayGcal=gcalEvents.filter(function(a){ return a.date===dateStr; }).map(function(a){ return {a:a,gcal:true}; });
     dayAppts.concat(dayGcal).sort(function(x,y){ return (x.a.time24||"").localeCompare(y.a.time24||""); })
       .forEach(function(item){
-        var appt=item.a; var isGcal=item.gcal;
+        var appt=Object.assign({},item.a); var isGcal=item.gcal;
+        // Apply local overrides for GCal events
+        if(isGcal){
+          var gcalKey=appt._gcalUid||(appt.date+"|"+appt.summary);
+          appt._gcalKey=gcalKey;
+          if(gcalOverrides[gcalKey]) Object.assign(appt,gcalOverrides[gcalKey]);
+        }
         var bg=isGcal?"#378ADD":"#1D9E75";
         var bgHov=isGcal?"#2a6fb5":"#178a63";
         var block=document.createElement("div");
@@ -5253,25 +5335,10 @@ function renderCalAppts(){
           addrSpan.style.cssText="font-size:9px;opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%";
           addrSpan.textContent=appt.address; block.appendChild(addrSpan);
         }
-        var acts=document.createElement("div");
-        acts.style.cssText="position:absolute;top:2px;right:2px;display:none;gap:2px";
-        if(!isGcal){
-          var eb=document.createElement("button"); eb.textContent="✏"; eb.style.cssText="background:rgba(255,255,255,.25);border:none;border-radius:3px;padding:1px 3px;font-size:9px;cursor:pointer;color:#fff";
-          eb.onclick=(function(id){ return function(e){ e.stopPropagation(); openApptModal(id); }; })(appt.id);
-          var db=document.createElement("button"); db.textContent="×"; db.style.cssText="background:rgba(255,255,255,.25);border:none;border-radius:3px;padding:1px 3px;font-size:9px;cursor:pointer;color:#fff";
-          db.onclick=(function(id){ return function(e){ e.stopPropagation(); deleteAppt(id); }; })(appt.id);
-          acts.appendChild(eb); acts.appendChild(db);
-        }
-        if(appt.address){
-          var lb=document.createElement("button"); lb.textContent="🗺"; lb.title="Find leads near this appointment";
-          lb.style.cssText="background:rgba(255,255,255,.25);border:none;border-radius:3px;padding:1px 3px;font-size:9px;cursor:pointer;color:#fff";
-          lb.onclick=(function(a){ return function(e){ e.stopPropagation(); openApptLeadsModal(a); }; })(appt);
-          acts.appendChild(lb);
-        }
-        block.appendChild(acts);
-        block.onmouseenter=function(){ acts.style.display="flex"; block.style.background=bgHov; };
-        block.onmouseleave=function(){ acts.style.display="none"; block.style.background=bg; };
-        block.onclick=(function(a){ return function(e){ if(e.target.closest("button")) return; if(a.address) openApptLeadsModal(a); }; })(appt);
+        // Store in global indexed array for bulletproof onclick
+        var _bi=_calBlockStore.length;
+        _calBlockStore.push({appt:appt,isGcal:isGcal});
+        block.setAttribute("onclick","openCalBlock("+_bi+")");
         col.appendChild(block);
       });
     grid.appendChild(col);
@@ -5295,6 +5362,92 @@ function formatApptDate(d){
 
 var _activeAppt=null;
 var _apptLeadsCurrent=null;
+
+// ── APPOINTMENT DETAIL MODAL ──────────────────────────────────────────────────
+var _adAppt=null, _adIsGcal=false;
+
+function openApptDetail(appt, isGcal){
+  _adAppt=appt; _adIsGcal=!!isGcal;
+  document.getElementById("ad-view").style.display="block";
+  document.getElementById("ad-edit").style.display="none";
+  document.getElementById("ad-title").textContent=appt.summary||"(no title)";
+  var badgeEl=document.getElementById("ad-badge");
+  badgeEl.style.display=isGcal?"inline-block":"none";
+  var timeEl=document.getElementById("ad-meta-time");
+  timeEl.textContent=appt.time||""; timeEl.style.display=appt.time?"":"none";
+  var dateEl=document.getElementById("ad-meta-date");
+  dateEl.textContent=formatApptDate(appt.date)||appt.date||""; dateEl.style.display=appt.date?"":"none";
+  var addrEl=document.getElementById("ad-meta-address");
+  addrEl.textContent=appt.address?"📍 "+appt.address:""; addrEl.style.display=appt.address?"":"none";
+  var notesEl=document.getElementById("ad-meta-notes");
+  notesEl.textContent=appt.notes||""; notesEl.style.display=appt.notes?"":"none";
+  document.getElementById("ad-gcal-notice").style.display=isGcal?"block":"none";
+  document.getElementById("ad-leads-btn").style.display=appt.address?"":"none";
+  document.getElementById("ad-delete-btn").style.display=isGcal?"none":"";
+  // Pre-populate edit fields
+  document.getElementById("ad-f-title").value=appt.summary||"";
+  document.getElementById("ad-f-date").value=appt.date||"";
+  document.getElementById("ad-f-time").value=appt.time24||"";
+  document.getElementById("ad-f-address").value=appt.address||"";
+  document.getElementById("ad-f-notes").value=appt.notes||"";
+  document.getElementById("ad-edit-gcal-notice").style.display=isGcal?"block":"none";
+  document.getElementById("modal-apptDetail").classList.add("open");
+}
+
+function _adEnterEdit(){
+  document.getElementById("ad-view").style.display="none";
+  document.getElementById("ad-edit").style.display="block";
+  document.getElementById("ad-f-title").focus();
+}
+
+function _adCancelEdit(){
+  document.getElementById("ad-edit").style.display="none";
+  document.getElementById("ad-view").style.display="block";
+}
+
+function _adSave(){
+  var title=document.getElementById("ad-f-title").value.trim();
+  var date=document.getElementById("ad-f-date").value;
+  var time24=document.getElementById("ad-f-time").value;
+  var address=document.getElementById("ad-f-address").value.trim();
+  var notes=document.getElementById("ad-f-notes").value.trim();
+  if(!title){ document.getElementById("ad-f-title").focus(); return; }
+  if(!date){ document.getElementById("ad-f-date").focus(); return; }
+  var timeDisp="";
+  if(time24){ var p=time24.split(":"),h=parseInt(p[0]),m=p[1]; timeDisp=(h%12||12)+":"+m+" "+(h>=12?"PM":"AM"); }
+  if(_adIsGcal){
+    var gcalKey=_adAppt._gcalKey||_adAppt._gcalUid||(_adAppt.date+"|"+_adAppt.summary);
+    gcalOverrides[gcalKey]=Object.assign(gcalOverrides[gcalKey]||{},{summary:title,date:date,time:timeDisp,time24:time24,address:address,notes:notes});
+    saveGcalOverrides();
+    Object.assign(_adAppt,{summary:title,date:date,time:timeDisp,time24:time24,address:address,notes:notes});
+  } else {
+    var idx=calAppts.findIndex(function(x){ return x.id===_adAppt.id; });
+    if(idx>-1){ Object.assign(calAppts[idx],{summary:title,date:date,time:timeDisp,time24:time24,address:address,notes:notes}); Object.assign(_adAppt,calAppts[idx]); }
+    saveCalAppts();
+  }
+  renderCalAppts();
+  // Refresh view with updated data
+  document.getElementById("ad-title").textContent=title;
+  var timeEl2=document.getElementById("ad-meta-time");
+  timeEl2.textContent=timeDisp; timeEl2.style.display=timeDisp?"":"none";
+  var dateEl2=document.getElementById("ad-meta-date");
+  dateEl2.textContent=formatApptDate(date)||date; dateEl2.style.display=date?"":"none";
+  var addrEl2=document.getElementById("ad-meta-address");
+  addrEl2.textContent=address?"📍 "+address:""; addrEl2.style.display=address?"":"none";
+  var notesEl2=document.getElementById("ad-meta-notes");
+  notesEl2.textContent=notes; notesEl2.style.display=notes?"":"none";
+  document.getElementById("ad-leads-btn").style.display=address?"":"none";
+  document.getElementById("ad-edit").style.display="none";
+  document.getElementById("ad-view").style.display="block";
+}
+
+function _adDelete(){
+  if(!_adAppt||_adIsGcal) return;
+  if(!confirm("Delete this appointment?")) return;
+  calAppts=calAppts.filter(function(a){ return a.id!==_adAppt.id; });
+  saveCalAppts(); renderCalAppts();
+  closeModal("apptDetail");
+}
 
 function openApptLeadsModal(appt){
   _apptLeadsCurrent=appt;
