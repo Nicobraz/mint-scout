@@ -21,6 +21,7 @@ def apollo_key():
 
 
 @app.route("/")
+@app.route("/Mint Scout.html")
 def index():
     return send_file(HTML_FILE)
 

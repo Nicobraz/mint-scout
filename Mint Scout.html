@@ -417,8 +417,6 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
 .flow-filter-bar { display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center; }
 .flow-filter-pill { padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1px solid #e0e0e0;background:#f8f8f8;color:#666;cursor:pointer;transition:all .15s; }
 .flow-filter-pill.active { background:#1a1a1a;color:#fff;border-color:#1a1a1a; }
-.flow-add-btn-nearby { padding:3px 8px;font-size:10px;font-weight:700;border-radius:6px;border:1px solid #378ADD;background:#e8f2ff;color:#378ADD;cursor:pointer;white-space:nowrap; }
-.flow-add-btn-nearby.in-flow { background:#1D9E75;border-color:#1D9E75;color:#fff;cursor:default; }
 </style>
 </head>
 <body>
@@ -664,7 +662,11 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
       miles
     </label>
   </div>
-  <input type="text" id="nearby-address" style="display:none">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <span style="font-size:12px;color:#666;white-space:nowrap">📍 Search from:</span>
+    <input type="text" id="nearby-address" placeholder="Type an address…" onchange="runNearbySearch()" onkeydown="if(event.key==='Enter')runNearbySearch()" style="flex:1;min-width:180px;padding:7px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px">
+    <button class="btn btn-primary" style="font-size:12px" onclick="runNearbySearch()">Search</button>
+  </div>
   <div id="nearby-appts-section" style="margin-bottom:16px"></div>
   <div class="nearby-progress" id="nearby-progress"></div>
   <div id="nearby-map-wrap" style="display:none;margin-bottom:14px">
@@ -829,14 +831,25 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
       <input class="modal-input" id="appt-time" type="time">
     </div>
     <div class="modal-field">
-      <div class="modal-label">Address</div>
-      <input class="modal-input" id="appt-address" placeholder="Street address..." oninput="filterApptPropSuggestions()">
+      <div class="modal-label">Address <span style="color:#bbb;font-size:10px">(Utah only)</span></div>
+      <input class="modal-input" id="appt-addr-street" placeholder="Street address..." oninput="filterApptPropSuggestions()">
       <div id="appt-prop-suggestions" style="max-height:160px;overflow-y:auto;border:1px solid #eee;border-radius:6px;margin-top:4px;display:none;background:#fff;box-shadow:0 4px 12px rgba(0,0,0,.1)"></div>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <input class="modal-input" id="appt-addr-city" placeholder="City" style="flex:2">
+        <input class="modal-input" id="appt-addr-zip" placeholder="Zip" style="flex:1" maxlength="5" inputmode="numeric">
+      </div>
       <div style="font-size:11px;color:#aaa;margin-top:3px">Or pick a property: <input type="text" id="appt-prop-search" placeholder="Search property name..." style="border:1px solid #ddd;border-radius:4px;padding:3px 7px;font-size:11px;margin-left:4px;width:180px" oninput="filterApptPropSuggestions()"></div>
     </div>
     <div class="modal-field">
       <div class="modal-label">Notes <span style="color:#bbb;font-size:10px">(optional)</span></div>
       <input class="modal-input" id="appt-notes" placeholder="Any notes...">
+    </div>
+    <div class="modal-field">
+      <div class="modal-label">Link to lead <span style="color:#bbb;font-size:10px">(optional)</span></div>
+      <input type="hidden" id="appt-lead-id">
+      <input class="modal-input" id="appt-lead-search" placeholder="Search leads by name, company, or address..." autocomplete="off" oninput="filterApptLeadSuggestions('appt')">
+      <div id="appt-lead-suggestions" style="max-height:160px;overflow-y:auto;border:1px solid #eee;border-radius:6px;margin-top:4px;display:none;background:#fff;box-shadow:0 4px 12px rgba(0,0,0,.1)"></div>
+      <div id="appt-lead-selected" style="display:none;font-size:11px;color:#1D9E75;margin-top:4px">Linked: <span id="appt-lead-selected-name"></span> <a href="#" onclick="clearApptLeadSelection('appt');return false;" style="color:#e74c3c;margin-left:6px">remove</a></div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-cancel" onclick="closeModal('appt')">Cancel</button>
@@ -861,6 +874,7 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
       <div id="ad-meta-date" style="font-size:12px;color:#888;margin-bottom:6px"></div>
       <div id="ad-meta-address" style="font-size:12px;color:#555;margin-bottom:6px;display:none"></div>
       <div id="ad-meta-notes" style="font-size:12px;color:#666;white-space:pre-wrap;margin-bottom:6px;display:none"></div>
+      <div id="ad-linked-lead" style="display:none;font-size:12px;color:#2563eb;margin-bottom:6px"></div>
       <div id="ad-gcal-notice" style="display:none;background:#fff8e1;border:1px solid #ffe082;border-radius:6px;padding:7px 10px;font-size:11px;color:#856404;margin-bottom:10px">📅 Google Calendar event — edits are saved locally only and won't sync back to GCal.</div>
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
         <button class="btn btn-primary" style="font-size:12px" onclick="_adEnterEdit()">✏ Edit</button>
@@ -888,12 +902,23 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
         <input class="modal-input" id="ad-f-time" type="time">
       </div>
       <div class="modal-field">
-        <div class="modal-label">Address</div>
-        <input class="modal-input" id="ad-f-address" placeholder="Street address...">
+        <div class="modal-label">Address <span style="color:#bbb;font-size:10px">(Utah only)</span></div>
+        <input class="modal-input" id="ad-f-addr-street" placeholder="Street address...">
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <input class="modal-input" id="ad-f-addr-city" placeholder="City" style="flex:2">
+          <input class="modal-input" id="ad-f-addr-zip" placeholder="Zip" style="flex:1" maxlength="5" inputmode="numeric">
+        </div>
       </div>
       <div class="modal-field">
         <div class="modal-label">Notes <span style="color:#bbb;font-size:10px">(optional)</span></div>
         <textarea class="modal-input" id="ad-f-notes" rows="3" style="resize:vertical" placeholder="Notes..."></textarea>
+      </div>
+      <div class="modal-field">
+        <div class="modal-label">Link to lead <span style="color:#bbb;font-size:10px">(optional)</span></div>
+        <input type="hidden" id="ad-f-lead-id">
+        <input class="modal-input" id="ad-f-lead-search" placeholder="Search leads by name, company, or address..." autocomplete="off" oninput="filterApptLeadSuggestions('ad-f')">
+        <div id="ad-f-lead-suggestions" style="max-height:160px;overflow-y:auto;border:1px solid #eee;border-radius:6px;margin-top:4px;display:none;background:#fff;box-shadow:0 4px 12px rgba(0,0,0,.1)"></div>
+        <div id="ad-f-lead-selected" style="display:none;font-size:11px;color:#1D9E75;margin-top:4px">Linked: <span id="ad-f-lead-selected-name"></span> <a href="#" onclick="clearApptLeadSelection('ad-f');return false;" style="color:#e74c3c;margin-left:6px">remove</a></div>
       </div>
       <div class="modal-actions">
         <button class="btn btn-cancel" onclick="_adCancelEdit()">Cancel</button>
@@ -5065,10 +5090,142 @@ function syncGoogleCalendar(silentIfEmpty){
   });
 }
 
+// Unified list of leads an appointment can be linked to: PM Mapping properties, Apollo-enriched
+// contacts (the ✨ Leads tab), and Apify-imported leads. Each entry's leadId is a composite
+// "pm:<pkey>" / "enriched:<id>" / "apify:<id>" so the three sources never collide.
+function getUnifiedLeadsList(){
+  var list=[];
+  getAllRows().forEach(function(r){
+    var k=pkey(r); var d=propData[k]||{};
+    list.push({leadId:"pm:"+k, src:"pm", name:r[0], company:r[1]||"", address:d.address||r[3]||"", phone:[d.phone,d.phone2].filter(Boolean).join(" / ")});
+  });
+  (enrichedContacts||[]).forEach(function(c){
+    list.push({leadId:"enriched:"+c.id, src:"enriched", name:c.name||"", company:c.company||"", address:[c.city,c.state].filter(Boolean).join(", "), phone:c.phone||c.email||"", stage:c.stage||"new"});
+  });
+  (googleLeads||[]).forEach(function(l){
+    list.push({leadId:"apify:"+l.id, src:"apify", name:l.name||"", company:l.category||"", address:l.address||"", phone:l.phone||""});
+  });
+  return list;
+}
+
+function findUnifiedLead(leadId){
+  if(!leadId) return null;
+  return getUnifiedLeadsList().find(function(item){ return item.leadId===leadId; })||null;
+}
+
+function apptLeadLabel(lead){
+  var label=lead.name||lead.company||"Lead";
+  var details=[lead.company!==lead.name?lead.company:"",lead.phone,lead.address].filter(Boolean);
+  return label+(details.length?" — "+details.join(" • "):"");
+}
+
+function filterApptLeadSuggestions(prefix){
+  var q=(document.getElementById(prefix+"-lead-search").value||"").trim().toLowerCase();
+  var box=document.getElementById(prefix+"-lead-suggestions");
+  if(!q||q.length<2){ box.style.display="none"; return; }
+  var matches=getUnifiedLeadsList().filter(function(item){
+    return (item.name+" "+item.company+" "+item.address).toLowerCase().includes(q);
+  }).slice(0,8);
+  if(!matches.length){ box.innerHTML='<div style="padding:7px 10px;font-size:12px;color:#aaa">No matching leads</div>'; box.style.display="block"; return; }
+  box.innerHTML=""; box.style.display="block";
+  matches.forEach(function(item){
+    var row=document.createElement("div");
+    row.style.cssText="padding:7px 10px;cursor:pointer;border-bottom:1px solid #f5f5f5;font-size:12px";
+    var srcBadges={pm:'<span style="background:#e8f4fd;color:#378ADD;font-size:9px;padding:1px 5px;border-radius:7px;font-weight:700;margin-right:5px">PM</span>',enriched:'<span style="background:#f5eefc;color:#9b59b6;font-size:9px;padding:1px 5px;border-radius:7px;font-weight:700;margin-right:5px">Lead</span>',apify:'<span style="background:#eafaf4;color:#1D9E75;font-size:9px;padding:1px 5px;border-radius:7px;font-weight:700;margin-right:5px">Apify</span>'};
+    var srcBadge=srcBadges[item.src]||"";
+    row.innerHTML=srcBadge+"<b>"+item.name+"</b><span style='color:#888;margin-left:6px'>"+[item.company,item.address].filter(Boolean).join(" • ")+"</span>";
+    row.onmouseover=function(){ row.style.background="#f6fdf9"; };
+    row.onmouseout=function(){ row.style.background=""; };
+    row.onclick=(function(it){ return function(){ selectApptLead(prefix,it); }; })(item);
+    box.appendChild(row);
+  });
+}
+
+function selectApptLead(prefix,lead){
+  document.getElementById(prefix+"-lead-id").value=lead.leadId;
+  document.getElementById(prefix+"-lead-search").value="";
+  document.getElementById(prefix+"-lead-suggestions").style.display="none";
+  document.getElementById(prefix+"-lead-selected-name").textContent=apptLeadLabel(lead);
+  document.getElementById(prefix+"-lead-selected").style.display="block";
+}
+
+function clearApptLeadSelection(prefix){
+  document.getElementById(prefix+"-lead-id").value="";
+  document.getElementById(prefix+"-lead-selected").style.display="none";
+}
+
+function setApptLeadField(prefix,leadId){
+  document.getElementById(prefix+"-lead-id").value="";
+  document.getElementById(prefix+"-lead-search").value="";
+  document.getElementById(prefix+"-lead-suggestions").style.display="none";
+  document.getElementById(prefix+"-lead-selected").style.display="none";
+  if(!leadId) return;
+  var lead=findUnifiedLead(leadId);
+  if(lead) selectApptLead(prefix,lead);
+}
+
+function updateApptLinkedLeadView(appt){
+  var wrap=document.getElementById("ad-linked-lead");
+  if(!wrap) return;
+  var lead=appt&&appt.leadId?findUnifiedLead(appt.leadId):null;
+  if(lead){
+    wrap.innerHTML='Linked lead: <a href="#" onclick="jumpToLinkedLead(\''+lead.leadId.replace(/'/g,"\\'")+'\');return false;" style="color:#2563eb">'+(lead.name||lead.company||"Lead")+'</a>';
+    wrap.style.display="block";
+  } else {
+    wrap.style.display="none";
+  }
+}
+
+function jumpToLinkedLead(leadId){
+  var lead=findUnifiedLead(leadId);
+  if(!lead) return;
+  closeModal("apptDetail");
+  if(lead.src==="pm"){
+    showTab("map");
+  } else if(lead.src==="enriched"){
+    showTab("enriched");
+    setEnrichedFilter(lead.stage==="appointed"?"appointed":(lead.stage==="outreach"?"outreach":"new"));
+  } else {
+    showTab("nearby");
+  }
+}
+
+// Appointment addresses are always Utah, so the state is implicit — only street/city/zip are collected.
+function splitUtahAddress(full){
+  full=(full||"").trim();
+  if(!full) return {street:"",city:"",zip:""};
+  var parts=full.split(",").map(function(s){ return s.trim(); }).filter(Boolean);
+  var street=parts[0]||"";
+  var city=(parts[1]||"").replace(/\bUT\b/gi,"").replace(/\d{5}/,"").trim();
+  var zipMatch=full.match(/\d{5}/);
+  return {street:street, city:city, zip:zipMatch?zipMatch[0]:""};
+}
+
+function joinUtahAddress(street,city,zip){
+  street=(street||"").trim(); city=(city||"").trim(); zip=(zip||"").trim();
+  if(!street) return "";
+  var tail=["UT",zip].filter(Boolean).join(" ");
+  return [street,city,tail].filter(Boolean).join(", ");
+}
+
+function getApptAddressParts(prefix){
+  return {
+    street:(document.getElementById(prefix+"-addr-street")||{}).value||"",
+    city:(document.getElementById(prefix+"-addr-city")||{}).value||"",
+    zip:(document.getElementById(prefix+"-addr-zip")||{}).value||""
+  };
+}
+
+function setApptAddressParts(prefix, street, city, zip){
+  var s=document.getElementById(prefix+"-addr-street"); if(s) s.value=street||"";
+  var c=document.getElementById(prefix+"-addr-city"); if(c) c.value=city||"";
+  var z=document.getElementById(prefix+"-addr-zip"); if(z) z.value=zip||"";
+}
+
 function openApptModalForProperty(name, addr, propKey){
   openApptModal();
   if(name) document.getElementById("appt-title").value=name;
-  if(addr) document.getElementById("appt-address").value=addr;
+  if(addr){ var p=splitUtahAddress(addr); setApptAddressParts("appt", p.street, p.city, p.zip); }
   if(propKey) document.getElementById("appt-prop-key").value=propKey;
 }
 
@@ -5079,25 +5236,29 @@ function openApptModal(editId){
   document.getElementById("appt-title").value="";
   document.getElementById("appt-date").value=new Date().toISOString().slice(0,10);
   document.getElementById("appt-time").value="";
-  document.getElementById("appt-address").value="";
+  setApptAddressParts("appt","","","");
   document.getElementById("appt-notes").value="";
   document.getElementById("appt-prop-search").value="";
   document.getElementById("appt-prop-suggestions").style.display="none";
+  var selectedLeadId="";
   if(editId){
     var a=calAppts.find(function(x){ return x.id===editId; });
     if(a){
       document.getElementById("appt-title").value=a.summary||"";
       document.getElementById("appt-date").value=a.date||"";
       document.getElementById("appt-time").value=a.time24||"";
-      document.getElementById("appt-address").value=a.address||"";
+      if(a.street||a.city||a.zip) setApptAddressParts("appt", a.street||"", a.city||"", a.zip||"");
+      else { var ap=splitUtahAddress(a.address||""); setApptAddressParts("appt", ap.street, ap.city, ap.zip); }
       document.getElementById("appt-notes").value=a.notes||"";
+      selectedLeadId=a.leadId||"";
     }
   }
+  setApptLeadField("appt", selectedLeadId);
   openModal("appt");
 }
 
 function filterApptPropSuggestions(){
-  var q=(document.getElementById("appt-prop-search").value||document.getElementById("appt-address").value).trim().toLowerCase();
+  var q=(document.getElementById("appt-prop-search").value||document.getElementById("appt-addr-street").value).trim().toLowerCase();
   var box=document.getElementById("appt-prop-suggestions");
   if(!q||q.length<2){ box.style.display="none"; return; }
   var rows=getAllRows();
@@ -5117,7 +5278,8 @@ function filterApptPropSuggestions(){
     item.onmouseover=function(){ item.style.background="#f6fdf9"; };
     item.onmouseout=function(){ item.style.background=""; };
     item.onclick=(function(row,address){ return function(){
-      document.getElementById("appt-address").value=address;
+      var p=splitUtahAddress(address);
+      setApptAddressParts("appt", p.street, p.city, p.zip);
       if(!document.getElementById("appt-title").value) document.getElementById("appt-title").value=row[0];
       document.getElementById("appt-prop-key").value=pkey(row);
       document.getElementById("appt-prop-search").value="";
@@ -5131,8 +5293,11 @@ function saveAppt(){
   var title=document.getElementById("appt-title").value.trim();
   var date=document.getElementById("appt-date").value;
   var time24=document.getElementById("appt-time").value;
-  var address=document.getElementById("appt-address").value.trim();
+  var addrParts=getApptAddressParts("appt");
+  var street=addrParts.street.trim(), city=addrParts.city.trim(), zip=addrParts.zip.trim();
+  var address=joinUtahAddress(street,city,zip);
   var notes=document.getElementById("appt-notes").value.trim();
+  var leadId=document.getElementById("appt-lead-id").value||"";
   if(!title){ alert("Please enter a title."); return; }
   if(!date){ alert("Please select a date."); return; }
   var timeDisplay="";
@@ -5144,9 +5309,9 @@ function saveAppt(){
   var linkedPropKeyForSave=document.getElementById("appt-prop-key").value||"";
   if(editId){
     var idx=calAppts.findIndex(function(x){ return x.id===editId; });
-    if(idx>-1) calAppts[idx]={id:editId,summary:title,date:date,time:timeDisplay,time24:time24,address:address,notes:notes,propKey:linkedPropKeyForSave||calAppts[idx].propKey||""};
+    if(idx>-1) calAppts[idx]={id:editId,summary:title,date:date,time:timeDisplay,time24:time24,address:address,street:street,city:city,zip:zip,notes:notes,propKey:linkedPropKeyForSave||calAppts[idx].propKey||"",leadId:leadId};
   } else {
-    calAppts.push({id:Date.now()+"",summary:title,date:date,time:timeDisplay,time24:time24,address:address,notes:notes,propKey:linkedPropKeyForSave});
+    calAppts.push({id:Date.now()+"",summary:title,date:date,time:timeDisplay,time24:time24,address:address,street:street,city:city,zip:zip,notes:notes,propKey:linkedPropKeyForSave,leadId:leadId});
   }
   calAppts.sort(function(a,b){ return (a.date+(a.time24||"")).localeCompare(b.date+(b.time24||"")); });
   saveCalAppts();
@@ -5158,7 +5323,7 @@ function saveAppt(){
     var allRows=getAllRows();
     var match=allRows.find(function(row){
       var d=propData[pkey(row)]||{};
-      var rAddr=(r[3]||d.address||"").toLowerCase().trim();
+      var rAddr=(row[3]||d.address||"").toLowerCase().trim();
       return rAddr&&rAddr===address.toLowerCase().trim();
     });
     if(match) linkedPropKey=pkey(match);
@@ -5199,8 +5364,20 @@ function getWeekDates(offset){
 }
 
 var _nearbyApptAddrs=[];
+var _nearbyApptObjs=[];
+// The appointment whose "🔍 Find Nearby" button was last clicked — contacts/properties added to the
+// outreach Flow while this is set get tagged with it, so the Flow tab can group them by that
+// appointment's day (e.g. "Thursday Flow").
+var _nearbyFlowSourceAppt=null;
+
+function weekdayName(dateStr){
+  if(!dateStr) return "";
+  try{ return new Date(dateStr+"T12:00:00").toLocaleDateString("en-US",{weekday:"long"}); }catch(e){ return ""; }
+}
+
 function searchNearbyFromAppt(i){
   var addr=_nearbyApptAddrs[i]; if(!addr) return;
+  _nearbyFlowSourceAppt=_nearbyApptObjs[i]||null;
   document.getElementById("nearby-address").value=addr;
   document.getElementById("nearby-radius").scrollIntoView&&document.getElementById("nearby-radius").scrollIntoView({behavior:"smooth",block:"nearest"});
   runNearbySearch();
@@ -5210,6 +5387,7 @@ function renderNearbyAppts(){
   var wrap=document.getElementById("nearby-appts-section");
   if(!wrap) return;
   _nearbyApptAddrs=[];
+  _nearbyApptObjs=[];
   var today=new Date(); today.setHours(0,0,0,0);
   var todayStr=today.toISOString().slice(0,10);
   var limitStr=new Date(today.getTime()+30*86400000).toISOString().slice(0,10);
@@ -5237,6 +5415,7 @@ function renderNearbyAppts(){
     var bg=isToday?"#f0fdf8":"#fff";
     var idx=_nearbyApptAddrs.length;
     _nearbyApptAddrs.push(appt.address);
+    _nearbyApptObjs.push(appt);
     html+='<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:'+bg+';border:1px solid '+border+';border-radius:10px;margin-bottom:8px;flex-wrap:wrap">';
     html+='<div style="flex:1;min-width:0">';
     html+='<div style="font-size:13px;font-weight:700;color:#1a1a1a;margin-bottom:2px">'+appt.summary+'</div>';
@@ -5384,12 +5563,15 @@ function openApptDetail(appt, isGcal){
   document.getElementById("ad-gcal-notice").style.display=isGcal?"block":"none";
   document.getElementById("ad-leads-btn").style.display=appt.address?"":"none";
   document.getElementById("ad-delete-btn").style.display=isGcal?"none":"";
+  updateApptLinkedLeadView(appt);
   // Pre-populate edit fields
   document.getElementById("ad-f-title").value=appt.summary||"";
   document.getElementById("ad-f-date").value=appt.date||"";
   document.getElementById("ad-f-time").value=appt.time24||"";
-  document.getElementById("ad-f-address").value=appt.address||"";
+  if(appt.street||appt.city||appt.zip) setApptAddressParts("ad-f", appt.street||"", appt.city||"", appt.zip||"");
+  else { var adP=splitUtahAddress(appt.address||""); setApptAddressParts("ad-f", adP.street, adP.city, adP.zip); }
   document.getElementById("ad-f-notes").value=appt.notes||"";
+  setApptLeadField("ad-f", appt.leadId||"");
   document.getElementById("ad-edit-gcal-notice").style.display=isGcal?"block":"none";
   document.getElementById("modal-apptDetail").classList.add("open");
 }
@@ -5409,20 +5591,23 @@ function _adSave(){
   var title=document.getElementById("ad-f-title").value.trim();
   var date=document.getElementById("ad-f-date").value;
   var time24=document.getElementById("ad-f-time").value;
-  var address=document.getElementById("ad-f-address").value.trim();
+  var adAddrParts=getApptAddressParts("ad-f");
+  var street=adAddrParts.street.trim(), city=adAddrParts.city.trim(), zip=adAddrParts.zip.trim();
+  var address=joinUtahAddress(street,city,zip);
   var notes=document.getElementById("ad-f-notes").value.trim();
+  var leadId=document.getElementById("ad-f-lead-id").value||"";
   if(!title){ document.getElementById("ad-f-title").focus(); return; }
   if(!date){ document.getElementById("ad-f-date").focus(); return; }
   var timeDisp="";
   if(time24){ var p=time24.split(":"),h=parseInt(p[0]),m=p[1]; timeDisp=(h%12||12)+":"+m+" "+(h>=12?"PM":"AM"); }
   if(_adIsGcal){
     var gcalKey=_adAppt._gcalKey||_adAppt._gcalUid||(_adAppt.date+"|"+_adAppt.summary);
-    gcalOverrides[gcalKey]=Object.assign(gcalOverrides[gcalKey]||{},{summary:title,date:date,time:timeDisp,time24:time24,address:address,notes:notes});
+    gcalOverrides[gcalKey]=Object.assign(gcalOverrides[gcalKey]||{},{summary:title,date:date,time:timeDisp,time24:time24,address:address,street:street,city:city,zip:zip,notes:notes,leadId:leadId});
     saveGcalOverrides();
-    Object.assign(_adAppt,{summary:title,date:date,time:timeDisp,time24:time24,address:address,notes:notes});
+    Object.assign(_adAppt,{summary:title,date:date,time:timeDisp,time24:time24,address:address,street:street,city:city,zip:zip,notes:notes,leadId:leadId});
   } else {
     var idx=calAppts.findIndex(function(x){ return x.id===_adAppt.id; });
-    if(idx>-1){ Object.assign(calAppts[idx],{summary:title,date:date,time:timeDisp,time24:time24,address:address,notes:notes}); Object.assign(_adAppt,calAppts[idx]); }
+    if(idx>-1){ Object.assign(calAppts[idx],{summary:title,date:date,time:timeDisp,time24:time24,address:address,street:street,city:city,zip:zip,notes:notes,leadId:leadId}); Object.assign(_adAppt,calAppts[idx]); }
     saveCalAppts();
   }
   renderCalAppts();
@@ -5437,6 +5622,7 @@ function _adSave(){
   var notesEl2=document.getElementById("ad-meta-notes");
   notesEl2.textContent=notes; notesEl2.style.display=notes?"":"none";
   document.getElementById("ad-leads-btn").style.display=address?"":"none";
+  updateApptLinkedLeadView(_adAppt);
   document.getElementById("ad-edit").style.display="none";
   document.getElementById("ad-view").style.display="block";
 }
@@ -5456,8 +5642,6 @@ function openApptLeadsModal(appt){
   document.getElementById("apl-meta").textContent=meta;
   document.getElementById("apl-address").textContent=appt.address||"No address set";
   document.getElementById("apl-db-results").innerHTML='<span style="color:#aaa">Loading…</span>';
-  document.getElementById("apl-apify-status").textContent="";
-  document.getElementById("apl-apify-results").innerHTML="";
   _initAplPills();
   document.getElementById("modal-apptLeads").classList.add("open");
   if(appt.address) _aplRunDBSearch();
@@ -5620,9 +5804,24 @@ function getPropCoords(r){
   return null;
 }
 
+// Nominatim (OpenStreetMap) geocoding is rate-limited per IP and doesn't send CORS headers on
+// error responses, which the browser reports as a misleading "CORS blocked" failure instead of
+// the real cause. Route through the server's /fetch proxy (server-side IP, shared/cached, not
+// subject to the browser's per-visitor rate limit) and fall back to a direct request when no
+// proxy is available (e.g. opened as a local file).
+function nominatimFetch(url, cb){
+  function direct(){
+    fetch(url).then(function(r){ return r.json(); }).then(cb).catch(function(){ cb(null); });
+  }
+  fetch("/fetch?url="+encodeURIComponent(url))
+    .then(function(r){ if(!r.ok) throw new Error("proxy failed"); return r.json(); })
+    .then(cb)
+    .catch(direct);
+}
+
 function reverseGeocode(lat, lon, cb){
   var url="https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat="+lat+"&lon="+lon+"&zoom=18&addressdetails=1&email=services@dirtymint.com";
-  fetch(url).then(function(r){return r.json();}).then(function(d){
+  nominatimFetch(url,function(d){
     if(d&&d.display_name){
       var a=d.address||{};
       var street=(a.house_number?a.house_number+" ":"")+( a.road||"");
@@ -5634,7 +5833,7 @@ function reverseGeocode(lat, lon, cb){
     } else {
       cb(null);
     }
-  }).catch(function(){ cb(null); });
+  });
 }
 
 function attachAddressAutocomplete(inputId, opts){
@@ -5736,15 +5935,13 @@ function attachAddressAutocomplete(inputId, opts){
     if(r.osm_type&&r.osm_id){
       var typeMap={"node":"N","way":"W","relation":"R"};
       var osmType=typeMap[r.osm_type.toLowerCase()]||r.osm_type.charAt(0).toUpperCase();
-      fetch("https://nominatim.openstreetmap.org/details?format=json&osmtype="+osmType+"&osmid="+r.osm_id+"&addressdetails=1&email=services@dirtymint.com")
-        .then(function(res){return res.json();})
-        .then(function(d){
-          if(d&&d.centroid&&d.centroid.coordinates){
-            geoCache[cacheKey].lat=d.centroid.coordinates[1];
-            geoCache[cacheKey].lon=d.centroid.coordinates[0];
-            saveGeoCache();
-          }
-        }).catch(function(){});
+      nominatimFetch("https://nominatim.openstreetmap.org/details?format=json&osmtype="+osmType+"&osmid="+r.osm_id+"&addressdetails=1&email=services@dirtymint.com",function(d){
+        if(d&&d.centroid&&d.centroid.coordinates){
+          geoCache[cacheKey].lat=d.centroid.coordinates[1];
+          geoCache[cacheKey].lon=d.centroid.coordinates[0];
+          saveGeoCache();
+        }
+      });
     }
   }
 
@@ -5777,7 +5974,7 @@ function attachAddressAutocomplete(inputId, opts){
     if(!val||val.length<3){ close(); return; }
     // viewbox=Utah bounds, bounded=0 so results outside Utah still appear if needed
     var url="https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&countrycodes=us&addressdetails=1&layer=address,poi&viewbox=-114.05,42.00,-109.04,36.99&bounded=1&email=services@dirtymint.com&q="+encodeURIComponent(val);
-    fetch(url).then(function(r){return r.json();}).then(render).catch(function(){close();});
+    nominatimFetch(url,render);
   }
 
   input.addEventListener("input",function(){
@@ -5810,14 +6007,12 @@ function attachAddressAutocomplete(inputId, opts){
 
 function geocodeSingle(addr,cb){
   if(geoCache[addr]){ cb(geoCache[addr]); return; } // only use cached successes
-  fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&email=services@dirtymint.com&q="+encodeURIComponent(addr))
-    .then(function(r){ return r.json(); })
-    .then(function(data){
-      var result=(data&&data[0])?{lat:parseFloat(data[0].lat),lon:parseFloat(data[0].lon)}:null;
-      if(result){ geoCache[addr]=result; saveGeoCache(); } // only cache successes
-      cb(result);
-    })
-    .catch(function(){ cb(null); }); // don't cache network failures
+  var url="https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&email=services@dirtymint.com&q="+encodeURIComponent(addr);
+  nominatimFetch(url,function(data){
+    var result=(data&&data[0])?{lat:parseFloat(data[0].lat),lon:parseFloat(data[0].lon)}:null;
+    if(result){ geoCache[addr]=result; saveGeoCache(); } // only cache successes
+    cb(result);
+  }); // don't cache network failures
 }
 
 // Geocode an appointment address — appends ", Utah, USA" if no state present
@@ -6159,16 +6354,7 @@ function renderNearbyResults(origin,radius,rows){
       :"background:none;border:1px solid #1D9E75;border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;color:#1D9E75;font-weight:600";
     enrichBtn.textContent=alreadyEnriched?"✓ Enriched":"Enrich";
     if(!alreadyEnriched) enrichBtn.onclick=(function(k){ return function(){ enrichNearbyContact(k); }; })(ekey);
-    var sk=pkey(r);
-    var inFlow=outreachContacts.some(function(c){ return c.sourceKey===sk||(c.name===r[0]&&c.city===(r[2]||"")); });
-    var flowBtn=document.createElement("button");
-    flowBtn.className="flow-add-btn-nearby"+(inFlow?" in-flow":"");
-    flowBtn.textContent=inFlow?"✓ In Flow":"＋ Flow";
-    if(!inFlow) flowBtn.onclick=(function(row,btn){ return function(){
-      addToOutreachFlow(row);
-      btn.textContent="✓ In Flow"; btn.className="flow-add-btn-nearby in-flow"; btn.onclick=null;
-    }; })(r,flowBtn);
-    tdEdit.appendChild(editBtn); tdEdit.appendChild(enrichBtn); tdEdit.appendChild(flowBtn);
+    tdEdit.appendChild(editBtn); tdEdit.appendChild(enrichBtn);
     tr.appendChild(tdChk); tr.appendChild(tdDist); tr.appendChild(tdName); tr.appendChild(tdCo);
     tr.appendChild(tdCity); tr.appendChild(tdAddr); tr.appendChild(tdMgr); tr.appendChild(tdPhone); tr.appendChild(tdEmail); tr.appendChild(tdTags); tr.appendChild(tdEdit);
 
@@ -8452,22 +8638,6 @@ var FLOW_STAGES=[
   {key:"no_contact", label:"No Contact",     btnLabel:null,                     nextStage:null,      btnClass:null}
 ];
 
-function addToOutreachFlow(row){
-  var sk=pkey(row);
-  var dup=outreachContacts.some(function(c){ return c.sourceKey===sk||(c.name===row[0]&&c.city===(row[2]||"")); });
-  if(dup) return;
-  var d=propData[sk]||{};
-  var phone=[d.phone,d.phone2].filter(Boolean).join(" / ")||"";
-  outreachContacts.push({
-    id:(crypto.randomUUID?crypto.randomUUID():Date.now()+Math.random().toString(36)),
-    name:row[0]||"", company:row[1]||"", city:row[2]||"",
-    address:row[3]||d.address||"", phone:phone, email:d.email||"",
-    notes:"", stage:"research", outcome:null,
-    addedAt:new Date().toISOString(), sourceKey:sk
-  });
-  saveOutreachFlow();
-}
-
 function setFlowStage(id, stage, outcome){
   var c=outreachContacts.find(function(x){ return x.id===id; });
   if(!c) return;
@@ -8483,27 +8653,90 @@ function removeFromFlow(id){
   renderFlowTab();
 }
 
+function gmailComposeUrl(email,subject,body){
+  var params="view=cm&fs=1&to="+encodeURIComponent(email);
+  if(subject) params+="&su="+encodeURIComponent(subject);
+  if(body) params+="&body="+encodeURIComponent(body);
+  return "https://mail.google.com/mail/?"+params;
+}
+
+function emailFromFlowModal(){
+  var email=document.getElementById("flow-add-email").value.trim();
+  if(!email){ alert("Enter an email address first."); return; }
+  window.open(gmailComposeUrl(email),"_blank");
+}
+
+function emailFlowContact(id){
+  var c=outreachContacts.find(function(x){ return x.id===id; });
+  if(!c) return;
+  if(!c.email){ alert("No email on file for this contact. Add one to send an email."); openFlowEditModal(id); return; }
+  window.open(gmailComposeUrl(c.email),"_blank");
+}
+
+var _flowEditId=null;
+
 function openAddToFlowModal(){
+  _flowEditId=null;
   ["flow-add-name","flow-add-company","flow-add-phone","flow-add-email","flow-add-city","flow-add-notes"].forEach(function(id){
     document.getElementById(id).value="";
   });
+  document.getElementById("flow-add-stage-row").style.display="none";
+  document.getElementById("flow-add-title").textContent="Add to Flow";
+  document.getElementById("flow-add-save-btn").textContent="Add to Flow";
+  openModal("flowAdd");
+}
+
+function openFlowEditModal(id){
+  var c=outreachContacts.find(function(x){ return x.id===id; });
+  if(!c) return;
+  _flowEditId=id;
+  document.getElementById("flow-add-name").value=c.name||"";
+  document.getElementById("flow-add-company").value=c.company||"";
+  document.getElementById("flow-add-phone").value=c.phone||"";
+  document.getElementById("flow-add-email").value=c.email||"";
+  document.getElementById("flow-add-city").value=c.city||"";
+  document.getElementById("flow-add-notes").value=c.notes||"";
+  var stageSel=document.getElementById("flow-add-stage");
+  stageSel.innerHTML="";
+  FLOW_STAGES.forEach(function(s){
+    var opt=document.createElement("option"); opt.value=s.key; opt.textContent=s.label;
+    if(s.key===c.stage) opt.selected=true;
+    stageSel.appendChild(opt);
+  });
+  document.getElementById("flow-add-stage-row").style.display="";
+  document.getElementById("flow-add-title").textContent="Edit Contact";
+  document.getElementById("flow-add-save-btn").textContent="Save Changes";
   openModal("flowAdd");
 }
 
 function saveFlowAddModal(){
   var name=document.getElementById("flow-add-name").value.trim();
   if(!name){ alert("Name is required."); return; }
-  outreachContacts.push({
-    id:(crypto.randomUUID?crypto.randomUUID():Date.now()+Math.random().toString(36)),
+  var fields={
     name:name,
     company:document.getElementById("flow-add-company").value.trim(),
     phone:document.getElementById("flow-add-phone").value.trim(),
     email:document.getElementById("flow-add-email").value.trim(),
     city:document.getElementById("flow-add-city").value.trim(),
-    notes:document.getElementById("flow-add-notes").value.trim(),
-    stage:"research", outcome:null,
-    addedAt:new Date().toISOString(), sourceKey:""
-  });
+    notes:document.getElementById("flow-add-notes").value.trim()
+  };
+  if(_flowEditId){
+    var c=outreachContacts.find(function(x){ return x.id===_flowEditId; });
+    if(c){
+      Object.assign(c,fields);
+      var newStage=document.getElementById("flow-add-stage").value;
+      if(newStage&&newStage!==c.stage){
+        c.stage=newStage;
+        c.outcome=(newStage==="appointed"||newStage==="not_interested"||newStage==="no_contact")?newStage:null;
+      }
+    }
+  } else {
+    outreachContacts.push(Object.assign({
+      id:(crypto.randomUUID?crypto.randomUUID():Date.now()+Math.random().toString(36)),
+      stage:"research", outcome:null,
+      addedAt:new Date().toISOString(), sourceKey:""
+    },fields));
+  }
   saveOutreachFlow();
   closeModal("flowAdd");
   renderFlowTab();
@@ -8548,10 +8781,16 @@ function renderFlowTab(){
     return;
   }
 
-  filtered.slice().reverse().forEach(function(c){
+  function renderFlowCard(c){
     var card=document.createElement("div"); card.className="flow-card";
 
     var left=document.createElement("div"); left.className="flow-card-left";
+
+    var clickArea=document.createElement("div");
+    clickArea.style.cssText="cursor:pointer";
+    clickArea.title="Click to view / edit contact";
+    clickArea.onclick=(function(id){ return function(){ openFlowEditModal(id); }; })(c.id);
+
     var nameLine=document.createElement("div"); nameLine.className="flow-card-name";
     var stageCls="flow-pill-"+c.stage;
     var stageInfo=FLOW_STAGES.find(function(s){ return s.key===c.stage; });
@@ -8560,7 +8799,7 @@ function renderFlowTab(){
     badge.textContent=stageInfo?stageInfo.label:c.stage;
     badge.style.marginLeft="8px";
     nameLine.appendChild(badge);
-    left.appendChild(nameLine);
+    clickArea.appendChild(nameLine);
 
     var sub=document.createElement("div"); sub.className="flow-card-sub";
     var parts=[];
@@ -8569,7 +8808,8 @@ function renderFlowTab(){
     if(c.phone) parts.push(c.phone);
     if(c.email) parts.push(c.email);
     sub.textContent=parts.join(" · ")||"";
-    left.appendChild(sub);
+    clickArea.appendChild(sub);
+    left.appendChild(clickArea);
 
     var notesEl=document.createElement("textarea"); notesEl.className="flow-card-notes";
     notesEl.placeholder="Add notes…"; notesEl.value=c.notes||"";
@@ -8580,10 +8820,21 @@ function renderFlowTab(){
 
     var actions=document.createElement("div"); actions.className="flow-card-actions";
 
+    var emailBtn=document.createElement("button");
+    emailBtn.style.cssText="background:none;border:none;color:"+(c.email?"#378ADD":"#ddd")+";font-size:16px;cursor:pointer;padding:0 4px;line-height:1";
+    emailBtn.textContent="✉";
+    emailBtn.title=c.email?"Email "+c.name+" via Gmail":"No email on file — click to add one";
+    emailBtn.onclick=(function(id){ return function(){ emailFlowContact(id); }; })(c.id);
+    actions.appendChild(emailBtn);
+
     if(c.stage==="research"){
       var b=document.createElement("button"); b.className="flow-btn flow-btn-research";
       b.textContent="✉ Mark Emailed";
-      b.onclick=(function(id){ return function(){ setFlowStage(id,"email",null); }; })(c.id);
+      b.onclick=(function(id){ return function(){
+        var contact=outreachContacts.find(function(x){ return x.id===id; });
+        if(contact&&contact.email) window.open(gmailComposeUrl(contact.email),"_blank");
+        setFlowStage(id,"email",null);
+      }; })(c.id);
       actions.appendChild(b);
     } else if(c.stage==="email"){
       var b=document.createElement("button"); b.className="flow-btn flow-btn-email";
@@ -8616,7 +8867,36 @@ function renderFlowTab(){
     actions.appendChild(del);
 
     card.appendChild(actions);
-    list.appendChild(card);
+    return card;
+  }
+
+  // Group by the day of the appointment that triggered the Nearby search this contact came
+  // from (flowGroupDate) — contacts added without that context fall into "Ungrouped".
+  var groups={};
+  filtered.forEach(function(c){ var gk=c.flowGroupDate||"__none__"; if(!groups[gk]) groups[gk]=[]; groups[gk].push(c); });
+  var groupKeys=Object.keys(groups).sort(function(a,b){
+    if(a==="__none__") return 1;
+    if(b==="__none__") return -1;
+    return a.localeCompare(b);
+  });
+  var multiGroup=groupKeys.length>1;
+  groupKeys.forEach(function(gk){
+    var items=groups[gk];
+    if(multiGroup){
+      var header=document.createElement("div");
+      if(gk!=="__none__"){
+        var first=items[0];
+        header.style.cssText="font-size:13px;font-weight:700;color:#1a1a1a;margin:18px 0 8px;padding-bottom:4px;border-bottom:2px solid #eee";
+        header.innerHTML="📅 "+weekdayName(gk)+" Flow "
+          +"<span style='font-weight:500;color:#aaa;font-size:11px;margin-left:6px'>"+(formatApptDate(gk)||gk)
+          +(first.apptSummary?" · "+first.apptSummary:"")+" · "+items.length+" contact"+(items.length===1?"":"s")+"</span>";
+      } else {
+        header.style.cssText="font-size:13px;font-weight:700;color:#888;margin:18px 0 8px;padding-bottom:4px;border-bottom:2px solid #eee";
+        header.textContent="Ungrouped";
+      }
+      list.appendChild(header);
+    }
+    items.slice().reverse().forEach(function(c){ list.appendChild(renderFlowCard(c)); });
   });
 }
 
@@ -8653,7 +8933,7 @@ syncGoogleCalendar(true);
 <div class="modal-overlay" id="modal-flowAdd" onclick="if(event.target===this)closeModal('flowAdd')">
   <div class="modal" style="max-width:420px;width:95vw">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <span style="font-size:16px;font-weight:700">Add to Flow</span>
+      <span style="font-size:16px;font-weight:700" id="flow-add-title">Add to Flow</span>
       <button style="background:none;border:none;font-size:20px;cursor:pointer;color:#aaa;line-height:1" onclick="closeModal('flowAdd')">&times;</button>
     </div>
     <div class="modal-label">Name / Property</div>
@@ -8666,10 +8946,15 @@ syncGoogleCalendar(true);
     <input class="modal-input" id="flow-add-email" type="email" placeholder="">
     <div class="modal-label" style="margin-top:10px">City</div>
     <input class="modal-input" id="flow-add-city" placeholder="">
+    <div id="flow-add-stage-row" style="display:none">
+      <div class="modal-label" style="margin-top:10px">Stage</div>
+      <select class="modal-input" id="flow-add-stage"></select>
+    </div>
     <div class="modal-label" style="margin-top:10px">Notes</div>
     <textarea class="modal-input" id="flow-add-notes" rows="2" placeholder="" style="resize:vertical"></textarea>
     <div style="display:flex;gap:8px;margin-top:16px">
-      <button class="btn btn-primary" style="flex:1" onclick="saveFlowAddModal()">Add to Flow</button>
+      <button class="btn btn-primary" style="flex:1" id="flow-add-save-btn" onclick="saveFlowAddModal()">Add to Flow</button>
+      <button class="btn" style="background:#e8f4fd;color:#378ADD" onclick="emailFromFlowModal()">✉ Email</button>
       <button class="btn" onclick="closeModal('flowAdd')">Cancel</button>
     </div>
   </div>
