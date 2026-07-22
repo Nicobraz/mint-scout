@@ -6286,12 +6286,14 @@ function renderNearbyResults(origin,radius,rows){
   var selCount=document.createElement("span"); selCount.className="nearby-sel-count"; selCount.textContent="0 selected";
   var btnClients=document.createElement("button"); btnClients.className="btn"; btnClients.style.cssText="background:#1D9E75;color:#fff;display:none";
   btnClients.textContent="Add to Current Clients"; btnClients.onclick=addNearbyToClients;
+  var btnFlow=document.createElement("button"); btnFlow.className="btn"; btnFlow.style.cssText="background:#8e44ad;color:#fff;display:none";
+  btnFlow.textContent="＋ Add to Flow"; btnFlow.onclick=addNearbyToFlow;
   var btnCSV=document.createElement("button"); btnCSV.className="btn"; btnCSV.style.cssText="background:#378ADD;color:#fff;display:none";
   btnCSV.textContent="Export CSV"; btnCSV.onclick=exportNearbyCSV;
   var btnClear=document.createElement("button"); btnClear.style.cssText="background:none;border:none;color:#888;font-size:11px;cursor:pointer;padding:0 4px;display:none";
   btnClear.textContent="× Clear"; btnClear.onclick=function(){ document.querySelectorAll(".nearby-row-chk").forEach(function(c){ c.checked=false; c.closest("tr").classList.remove("nearby-row-checked"); }); allChk.checked=false; updateNearbySelBar(); };
   var hint=document.createElement("span"); hint.style.cssText="color:#aaa;font-size:11px"; hint.id="nearby-sel-hint"; hint.textContent="Check rows to select";
-  selBar.appendChild(selCount); selBar.appendChild(btnClients); selBar.appendChild(btnCSV); selBar.appendChild(btnClear); selBar.appendChild(hint);
+  selBar.appendChild(selCount); selBar.appendChild(btnClients); selBar.appendChild(btnFlow); selBar.appendChild(btnCSV); selBar.appendChild(btnClear); selBar.appendChild(hint);
   frag.appendChild(selBar);
 
   function updateNearbySelBar(){
@@ -6300,7 +6302,7 @@ function renderNearbyResults(origin,radius,rows){
     selCount.textContent=checked+" of "+total+" selected";
     var hasSel=checked>0;
     selBar.classList[hasSel?"add":"remove"]("has-sel");
-    [btnClients,btnCSV,btnClear].forEach(function(b){ b.style.display=hasSel?"":"none"; });
+    [btnClients,btnFlow,btnCSV,btnClear].forEach(function(b){ b.style.display=hasSel?"":"none"; });
     hint.style.display=hasSel?"none":"";
     allChk.checked=hasSel&&checked===total;
   }
@@ -8453,6 +8455,37 @@ function addNearbyToClients(){
   alert(msg);
 }
 
+function addNearbyToFlow(){
+  var checked=Array.from(document.querySelectorAll(".nearby-row-chk:checked"));
+  if(!checked.length){ alert("Select at least one property."); return; }
+  var appt=_nearbyFlowSourceAppt;
+  var added=0, skipped=0;
+  checked.forEach(function(c){
+    var info=JSON.parse(c.dataset.info);
+    var key=info.name+"|"+info.company+"|"+info.city;
+    var exists=outreachContacts.some(function(x){ return x.sourceKey===key; });
+    if(exists){ skipped++; return; }
+    outreachContacts.push({
+      id:(crypto.randomUUID?crypto.randomUUID():Date.now()+Math.random().toString(36)),
+      name:info.name, company:info.company||"", phone:info.phone||"", email:info.email||"",
+      city:info.city||"", notes:"",
+      stage:"research", outcome:null,
+      addedAt:new Date().toISOString(),
+      sourceKey:key,
+      flowGroupDate: appt?appt.date:"",
+      apptSummary: appt?appt.summary:"",
+      apptAddress: appt?appt.address:"",
+      apptTime: appt?(appt.time||""):"",
+      apptCity: appt?(appt.city||""):""
+    });
+    added++;
+  });
+  saveOutreachFlow();
+  var msg=added+" contact"+(added===1?"":"s")+" added to Flow"+(appt?(" under "+weekdayName(appt.date)+" Flow"):"")+".";
+  if(skipped) msg+=" ("+skipped+" already in Flow, skipped)";
+  alert(msg);
+}
+
 function exportNearbyCSV(){
   var checked=Array.from(document.querySelectorAll(".nearby-row-chk:checked"));
   var rows=checked.length?checked.map(function(c){ return JSON.parse(c.dataset.info); }):_nearbyResults.map(function(item){
@@ -8663,14 +8696,41 @@ function gmailComposeUrl(email,subject,body){
 function emailFromFlowModal(){
   var email=document.getElementById("flow-add-email").value.trim();
   if(!email){ alert("Enter an email address first."); return; }
-  window.open(gmailComposeUrl(email),"_blank");
+  var existing=_flowEditId?outreachContacts.find(function(x){ return x.id===_flowEditId; }):null;
+  var tmp={
+    name:document.getElementById("flow-add-name").value.trim()||(existing&&existing.name)||"",
+    company:document.getElementById("flow-add-company").value.trim()||(existing&&existing.company)||"",
+    apptSummary:existing?existing.apptSummary:"",
+    apptAddress:existing?existing.apptAddress:"",
+    flowGroupDate:existing?existing.flowGroupDate:""
+  };
+  var em=buildFlowEmail(tmp);
+  window.open(gmailComposeUrl(email,em.subject,em.body),"_blank");
+}
+
+// Builds a subject/body for a Flow contact, referencing the appointment it was
+// added from (if any) so outreach emails read naturally instead of generic/cold.
+function buildFlowEmail(c){
+  var apptDateFmt=c.flowGroupDate?formatApptDate(c.flowGroupDate):"";
+  var contextLine=c.apptSummary
+    ?("I'll be near "+c.apptSummary+(c.apptAddress?" ("+c.apptAddress+")":"")+(apptDateFmt?" on "+apptDateFmt:"")+", and wanted to reach out.\n\n")
+    :"";
+  var forCompany=c.company?(" at "+c.company):"";
+  var subject="Window Cleaning"+(c.company?(" for "+c.company):"")+(c.apptSummary?(" – "+c.apptSummary):"");
+  var body="Hi "+(c.name||"there")+",\n\n"
+    +contextLine
+    +"I wanted to reach out about professional window cleaning services"+forCompany+".\n\n"
+    +"Would you be open to a quick call or a free estimate?\n\n"
+    +"Thanks,\nMiNT Window Cleaning";
+  return {subject:subject,body:body};
 }
 
 function emailFlowContact(id){
   var c=outreachContacts.find(function(x){ return x.id===id; });
   if(!c) return;
   if(!c.email){ alert("No email on file for this contact. Add one to send an email."); openFlowEditModal(id); return; }
-  window.open(gmailComposeUrl(c.email),"_blank");
+  var em=buildFlowEmail(c);
+  window.open(gmailComposeUrl(c.email,em.subject,em.body),"_blank");
 }
 
 var _flowEditId=null;
@@ -8681,6 +8741,7 @@ function openAddToFlowModal(){
     document.getElementById(id).value="";
   });
   document.getElementById("flow-add-stage-row").style.display="none";
+  document.getElementById("flow-add-appt-context").style.display="none";
   document.getElementById("flow-add-title").textContent="Add to Flow";
   document.getElementById("flow-add-save-btn").textContent="Add to Flow";
   openModal("flowAdd");
@@ -8704,6 +8765,14 @@ function openFlowEditModal(id){
     stageSel.appendChild(opt);
   });
   document.getElementById("flow-add-stage-row").style.display="";
+  var apptCtx=document.getElementById("flow-add-appt-context");
+  if(c.apptSummary){
+    var apptDateFmt=c.flowGroupDate?formatApptDate(c.flowGroupDate):"";
+    apptCtx.textContent="📅 Added from: "+c.apptSummary+(apptDateFmt?" · "+apptDateFmt:"")+(c.apptAddress?" · "+c.apptAddress:"");
+    apptCtx.style.display="";
+  } else {
+    apptCtx.style.display="none";
+  }
   document.getElementById("flow-add-title").textContent="Edit Contact";
   document.getElementById("flow-add-save-btn").textContent="Save Changes";
   openModal("flowAdd");
@@ -8832,7 +8901,7 @@ function renderFlowTab(){
       b.textContent="✉ Mark Emailed";
       b.onclick=(function(id){ return function(){
         var contact=outreachContacts.find(function(x){ return x.id===id; });
-        if(contact&&contact.email) window.open(gmailComposeUrl(contact.email),"_blank");
+        if(contact&&contact.email){ var em=buildFlowEmail(contact); window.open(gmailComposeUrl(contact.email,em.subject,em.body),"_blank"); }
         setFlowStage(id,"email",null);
       }; })(c.id);
       actions.appendChild(b);
@@ -8936,6 +9005,7 @@ syncGoogleCalendar(true);
       <span style="font-size:16px;font-weight:700" id="flow-add-title">Add to Flow</span>
       <button style="background:none;border:none;font-size:20px;cursor:pointer;color:#aaa;line-height:1" onclick="closeModal('flowAdd')">&times;</button>
     </div>
+    <div id="flow-add-appt-context" style="display:none;font-size:12px;color:#555;background:#f8f4fc;border:1px solid #e8d9f5;border-radius:8px;padding:8px 10px;margin-bottom:12px"></div>
     <div class="modal-label">Name / Property</div>
     <input class="modal-input" id="flow-add-name" placeholder="e.g. Sunrise Apartments">
     <div class="modal-label" style="margin-top:10px">Company</div>
