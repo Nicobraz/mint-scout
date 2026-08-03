@@ -453,10 +453,8 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
 
 <div class="tabs">
   <button class="tab-btn" id="btn-dash"     onclick="showTab('dash')">📊 Dashboard</button>
-  <button class="tab-btn active" id="btn-map" onclick="showTab('map')">🗺 PM Mapping</button>
+  <button class="tab-btn active" id="btn-map" onclick="showTab('map')">🗺 Properties</button>
   <button class="tab-btn" id="btn-contacts" onclick="showTab('contacts')">👥 Contacts</button>
-  <button class="tab-btn" id="btn-players"  onclick="showTab('players')">⭐ Key Contacts</button>
-  <button class="tab-btn" id="btn-clients"  onclick="showTab('clients')">✅ Current Clients</button>
   <button class="tab-btn" id="btn-nearby"   onclick="showTab('nearby')">📍 Nearby</button>
   <button class="tab-btn" id="btn-enriched" onclick="showTab('enriched')">✨ Leads</button>
   <button class="tab-btn" id="btn-appts"    onclick="showTab('appts')">📅 Appointments</button>
@@ -501,40 +499,46 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
 
 <!-- UNIFIED CONTACTS -->
 <div id="pane-contacts" style="display:none">
-  <div class="toolbar">
-    <input type="text" id="contact-search" placeholder="Search by name, company, phone, email, city..." oninput="renderContacts()">
-    <span class="stat" id="contact-stat"></span>
+  <div class="flow-filter-bar" id="contacts-subtab-bar">
+    <button class="flow-filter-pill active" id="csub-btn-all"     onclick="showContactsSubTab('all')">All Contacts</button>
+    <button class="flow-filter-pill" id="csub-btn-players" onclick="showContactsSubTab('players')">⭐ Key Contacts</button>
+    <button class="flow-filter-pill" id="csub-btn-clients" onclick="showContactsSubTab('clients')">✅ Current Clients</button>
   </div>
-  <div class="flow-filter-bar" id="contacts-source-filter-bar"></div>
-  <div id="contact-table-wrap"></div>
-</div>
 
-<!-- KEY CONTACTS -->
-<div id="pane-players" style="display:none">
-  <div class="toolbar">
-    <input type="text" id="player-search" placeholder="Search by name, company, phone, email..." oninput="renderPlayers()">
-    <select id="player-status-filter" onchange="renderPlayers()">
-      <option value="">All</option>
-      <option value="client">Current Clients Only</option>
-      <option value="interested">Interested</option>
-      <option value="follow-up">Follow Up</option>
-      <option value="contacted">Contacted</option>
-      <option value="not-interested">Not Interested</option>
-    </select>
-    <button class="btn btn-gold" onclick="openModal('addPlayer')">+ Add Key Contact</button>
-    <span class="stat" id="player-stat"></span>
+  <div id="contacts-sub-all">
+    <div class="toolbar">
+      <input type="text" id="contact-search" placeholder="Search by name, company, phone, email, city..." oninput="renderContacts()">
+      <span class="stat" id="contact-stat"></span>
+    </div>
+    <div class="flow-filter-bar" id="contacts-source-filter-bar"></div>
+    <div id="contact-table-wrap"></div>
   </div>
-  <div id="player-grid" class="kp-grid"></div>
-</div>
 
-<!-- CURRENT CLIENTS -->
-<div id="pane-clients" style="display:none">
-  <div class="toolbar">
-    <input type="text" id="client-search" placeholder="Search clients, companies, cities..." oninput="renderClients()">
-    <button class="btn btn-green" onclick="openAddClientModal()">+ Add Client</button>
-    <span class="stat" id="client-stat"></span>
+  <div id="contacts-sub-players" style="display:none">
+    <div class="toolbar">
+      <input type="text" id="player-search" placeholder="Search by name, company, phone, email..." oninput="renderPlayers()">
+      <select id="player-status-filter" onchange="renderPlayers()">
+        <option value="">All</option>
+        <option value="client">Current Clients Only</option>
+        <option value="interested">Interested</option>
+        <option value="follow-up">Follow Up</option>
+        <option value="contacted">Contacted</option>
+        <option value="not-interested">Not Interested</option>
+      </select>
+      <button class="btn btn-gold" onclick="openModal('addPlayer')">+ Add Key Contact</button>
+      <span class="stat" id="player-stat"></span>
+    </div>
+    <div id="player-grid" class="kp-grid"></div>
   </div>
-  <div id="client-grid"></div>
+
+  <div id="contacts-sub-clients" style="display:none">
+    <div class="toolbar">
+      <input type="text" id="client-search" placeholder="Search clients, companies, cities..." oninput="renderClients()">
+      <button class="btn btn-green" onclick="openAddClientModal()">+ Add Client</button>
+      <span class="stat" id="client-stat"></span>
+    </div>
+    <div id="client-grid"></div>
+  </div>
 </div>
 
 <!-- ADD PROPERTY MODAL -->
@@ -3698,20 +3702,34 @@ function getAllRows() {
 }
 
 // ── TAB SWITCHING ─────────────────────────────────────────────────────────
+var _contactsSubTab="all";
+
 function showTab(tab) {
-  ["dash","map","contacts","players","clients","nearby","enriched","appts","gcal","fillday","flow"].forEach(function(t) {
+  ["dash","map","contacts","nearby","enriched","appts","gcal","fillday","flow"].forEach(function(t) {
     document.getElementById("pane-"+t).style.display=(t===tab)?"":"none";
     document.getElementById("btn-"+t).classList[(t===tab)?"add":"remove"]("active");
   });
   if(tab==="dash")     renderDash();
-  if(tab==="contacts") renderContacts();
-  if(tab==="players")  renderPlayers();
-  if(tab==="clients")  renderClients();
+  if(tab==="contacts") showContactsSubTab(_contactsSubTab);
   if(tab==="enriched") renderEnriched();
   if(tab==="nearby")   renderNearbyAppts();
   if(tab==="appts")    { renderCalAppts(); syncGoogleCalendar(true); }
   if(tab==="fillday")  renderFillMyDay();
   if(tab==="flow")     renderFlowTab();
+}
+
+// Key Contacts and Current Clients live inside the Contacts tab as sub-views
+// rather than separate top-level tabs — same panes/render functions as
+// before (renderPlayers()/renderClients()), just relocated.
+function showContactsSubTab(sub){
+  _contactsSubTab=sub;
+  ["all","players","clients"].forEach(function(s){
+    document.getElementById("contacts-sub-"+s).style.display=(s===sub)?"":"none";
+    document.getElementById("csub-btn-"+s).classList[(s===sub)?"add":"remove"]("active");
+  });
+  if(sub==="all")     renderContacts();
+  if(sub==="players") renderPlayers();
+  if(sub==="clients") renderClients();
 }
 
 // ── CITIES ────────────────────────────────────────────────────────────────
