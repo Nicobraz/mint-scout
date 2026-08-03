@@ -4221,12 +4221,43 @@ function openReassignModal(r) {
   document.getElementById("modal-reassign").classList.add("open");
 }
 
+// A property's identity key is name|company|city (pkey()), so reassigning
+// its company changes that key — anything filed under the old key (property
+// notes/tags, a Current Client record, a Contact's linked properties) would
+// otherwise be silently orphaned. Moves that data over to the new key instead.
+function migratePropertyKey(oldKey, newKey){
+  if(!oldKey||!newKey||oldKey===newKey) return;
+  if(propData[oldKey]){
+    if(!propData[newKey]) propData[newKey]={};
+    Object.keys(propData[oldKey]).forEach(function(f){
+      var existing=propData[newKey][f];
+      var isEmpty=existing===undefined||existing===""||(Array.isArray(existing)&&existing.length===0);
+      if(isEmpty) propData[newKey][f]=propData[oldKey][f];
+    });
+    delete propData[oldKey];
+  }
+  (customData.clientProps||[]).forEach(function(cp){ if(cp.key===oldKey) cp.key=newKey; });
+  (customData.players||[]).forEach(function(p){
+    if(p.sourceKey===oldKey) p.sourceKey=newKey;
+    if(p.propertyKeys){
+      var idx=p.propertyKeys.indexOf(oldKey);
+      if(idx>-1){
+        if(p.propertyKeys.indexOf(newKey)===-1) p.propertyKeys[idx]=newKey;
+        else p.propertyKeys.splice(idx,1);
+      }
+    }
+  });
+  (outreachContacts||[]).forEach(function(c){ if(c.sourceKey===oldKey) c.sourceKey=newKey; });
+}
+
 function submitReassign() {
   if(!reassignTarget) return;
   var r=reassignTarget, company=resolveCompany("reassign-company-select","reassign-new-input"); if(company===null) return; if(!company){ alert("Please select a company."); return; }
+  var oldKey=pkey(r);
   var found=false;
   customData.properties.forEach(function(p){ if(p.name===r[0]&&p.company===r[1]&&p.city===r[2]){ p.company=company; found=true; } });
   if(!found){ if(!customData.overrides) customData.overrides={}; customData.overrides[pkey(r)]=company; }
+  migratePropertyKey(oldKey, r[0]+"|"+company+"|"+r[2]);
   saveAll(); closeModal("reassign"); populateCities(); renderMap();
 }
 
