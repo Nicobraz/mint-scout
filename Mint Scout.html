@@ -9221,6 +9221,15 @@ function renderFlowTab(){
         b.title="No email on file — skip straight to calling";
         b.onclick=(function(id){ return function(){ markFlowCalled(id,1); }; })(c.id);
         actions.appendChild(b);
+
+        // Some properties get emailed at a general property-management address
+        // that isn't tied to this specific property/contact — this still lets
+        // that get marked as Email Sent without needing an address on file.
+        var manualEmailBtn=document.createElement("button"); manualEmailBtn.className="flow-btn flow-btn-reset";
+        manualEmailBtn.textContent="✉ I Emailed Them";
+        manualEmailBtn.title="No email on file for this property, but you emailed them some other way (e.g. a general company address)";
+        manualEmailBtn.onclick=(function(id){ return function(){ setFlowStage(id,"email",null); }; })(c.id);
+        actions.appendChild(manualEmailBtn);
       }
     } else if(c.stage==="email"){
       var b=document.createElement("button"); b.className="flow-btn flow-btn-email";
