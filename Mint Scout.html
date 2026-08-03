@@ -8928,16 +8928,15 @@ function emailFromFlowModal(){
 // added from (if any) so outreach emails read naturally instead of generic/cold.
 function buildFlowEmail(c){
   var dayName=c.flowGroupDate?weekdayName(c.flowGroupDate):"";
-  var contextLine=c.apptSummary
-    ?("I'm going to be in the area"+(dayName?" this "+dayName:"")+" (near "+c.apptSummary+(c.apptAddress?", "+c.apptAddress:"")+") and wanted to reach out about professional window cleaning"+(c.company?" for "+c.company:"")+".\n\n")
-    :"";
-  var forCompany=c.company?(" for "+c.company):"";
+  var whereLine=c.apptSummary?(" at "+c.apptSummary+(c.apptCity?" in "+c.apptCity:"")):"";
+  var openingLine=c.apptSummary
+    ?("I'll be in the area"+(dayName?" this "+dayName:"")+whereLine+" and wanted to see if there's anything you'd like us to provide a bid for while I'm nearby. Even if you don't need anything right now, I'd be happy to stop by and drop off a card.")
+    :"I wanted to see if there's anything you'd like us to provide a bid for. Even if you don't need anything right now, I'd be happy to stop by and drop off a card.";
   var subject="Window Cleaning"+(c.company?(" – "+c.company):"");
   var body="Hey "+(c.name||"there")+",\n\n"
-    +contextLine
-    +(c.apptSummary?"":"I wanted to reach out about professional window cleaning"+forCompany+".\n\n")
-    +"Would you be open to a quick call or a free estimate?\n\n"
-    +"Thanks,\nMiNT Window Cleaning";
+    +openingLine+"\n\n"
+    +"We offer window, carpet, and tile cleaning, as well as pressure washing and other related exterior cleaning services.\n\n"
+    +"Thanks,\nNico\nMiNT Cleaning";
   return {subject:subject,body:body};
 }
 
