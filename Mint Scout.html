@@ -381,6 +381,7 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
   /* Larger tap targets for card buttons */
   .card-btn { padding: 4px 6px !important; font-size: 16px !important; }
   .flow-icon-btn { padding:10px 12px !important; font-size:18px !important; min-width:40px; min-height:40px; }
+  .flow-icon-btn-email { font-size:24px !important; min-width:46px; min-height:46px; }
 
   /* Contact tracker table scroll */
   #pane-contacts { overflow-x: auto; }
@@ -417,6 +418,7 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
 .flow-btn-reset    { background:#f8f8f8;color:#888;border:1px solid #ddd; }
 .flow-icon-btn { background:none; border:none; cursor:pointer; padding:6px 8px; font-size:16px; line-height:1; border-radius:6px; }
 .flow-icon-btn:hover { background:#f5f5f5; }
+.flow-icon-btn-email { font-size:22px; padding:8px 10px; }
 .flow-filter-bar { display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center; }
 .flow-filter-pill { padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1px solid #e0e0e0;background:#f8f8f8;color:#666;cursor:pointer;transition:all .15s; }
 .flow-filter-pill.active { background:#1a1a1a;color:#fff;border-color:#1a1a1a; }
@@ -8927,7 +8929,7 @@ function renderFlowTab(){
     var actions=document.createElement("div"); actions.className="flow-card-actions";
 
     var emailBtn=document.createElement("button");
-    emailBtn.className="flow-icon-btn";
+    emailBtn.className="flow-icon-btn flow-icon-btn-email";
     emailBtn.style.color=c.email?"#378ADD":"#ddd";
     emailBtn.textContent="✉";
     emailBtn.title=c.email?"Email "+c.name+" via Gmail":"No email on file — click to add one";
