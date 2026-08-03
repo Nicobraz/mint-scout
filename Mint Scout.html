@@ -8948,6 +8948,24 @@ function emailFlowContact(id){
   window.open(gmailComposeUrl(c.email,em.subject,em.body),"_blank");
 }
 
+// Opens the Appointment modal pre-filled from a Flow contact. When the contact
+// is linked to a real property (sourceKey), uses that property's actual address
+// and links the new appointment back to it (openApptModalForProperty's propKey)
+// so the property's "last walked" stays in sync, same as scheduling from a PM
+// Mapping card. Falls back to the appointment address that originally brought
+// this contact into Flow, then just the city, for unlinked contacts.
+function scheduleFlowContact(id){
+  var c=outreachContacts.find(function(x){ return x.id===id; });
+  if(!c) return;
+  var addr="";
+  if(c.sourceKey){
+    var row=getAllRows().find(function(r){ return pkey(r)===c.sourceKey; });
+    if(row){ var d=propData[c.sourceKey]||{}; addr=row[3]||d.address||""; }
+  }
+  if(!addr) addr=c.apptAddress||c.city||"";
+  openApptModalForProperty(c.name, addr, c.sourceKey||"");
+}
+
 var _flowEditId=null;
 
 function openAddToFlowModal(){
@@ -9012,6 +9030,15 @@ function saveFlowAddModal(){
       if(newStage&&newStage!==c.stage){
         c.stage=newStage;
         c.outcome=(newStage==="appointed"||newStage==="not_interested"||newStage==="no_contact")?newStage:null;
+      }
+      // Keep the linked property card's phone/email in sync with this contact
+      // (not the manager name — a Flow contact's "name" is the property/account
+      // name, not necessarily a person, so that field is left alone here).
+      if(c.sourceKey){
+        if(!propData[c.sourceKey]) propData[c.sourceKey]={};
+        if(c.phone) propData[c.sourceKey].phone=c.phone;
+        if(c.email) propData[c.sourceKey].email=c.email;
+        saveAll();
       }
     }
   } else {
@@ -9118,6 +9145,14 @@ function renderFlowTab(){
     emailBtn.title=c.email?"Email "+c.name+" via Gmail":"No email on file — click to add one";
     emailBtn.onclick=(function(id){ return function(){ emailFlowContact(id); }; })(c.id);
     actions.appendChild(emailBtn);
+
+    var schedBtn=document.createElement("button");
+    schedBtn.className="flow-icon-btn";
+    schedBtn.style.color="#378ADD";
+    schedBtn.textContent="📅";
+    schedBtn.title="Schedule an appointment";
+    schedBtn.onclick=(function(id){ return function(){ scheduleFlowContact(id); }; })(c.id);
+    actions.appendChild(schedBtn);
 
     if(c.stage==="research"){
       var b=document.createElement("button"); b.className="flow-btn flow-btn-research";
