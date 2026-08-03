@@ -9115,18 +9115,22 @@ function renderFlowTab(){
   var list=document.getElementById("flow-list");
   list.innerHTML="";
 
-  // "appointed"/"no_contact" are legacy stage values from before scheduling
-  // (📅) took over removing contacts from Flow directly — still recognized
-  // here so any contact already in one of those states keeps rendering
-  // correctly, even though new contacts can no longer land there.
+  // A real outcome means the person was actually reached — No Answer and Left
+  // Message are failed attempts, not outcomes, so they don't count here (see
+  // isAttempted below). "appointed"/"no_contact" are legacy stage values from
+  // before scheduling (📅) took over removing contacts from Flow directly —
+  // still recognized so any contact already in one of those states keeps
+  // rendering correctly, even though new contacts can no longer land there.
   var isOutcome=function(c){
-    return c.stage==="not_interested"||c.stage==="no_answer"||c.stage==="left_message"||c.stage==="positive_followup"
-      ||c.stage==="appointed"||c.stage==="no_contact";
+    return c.stage==="not_interested"||c.stage==="positive_followup"||c.stage==="appointed";
   };
+  // Attempted-but-unresolved: a call was made but nobody was actually reached.
+  var isAttempted=function(c){ return c.stage==="no_answer"||c.stage==="left_message"; };
 
   var filtered=outreachContacts.filter(function(c){
     if(_flowFilter==="all") return true;
     if(_flowFilter==="outcomes") return isOutcome(c);
+    if(_flowFilter==="call") return c.stage==="call"||isAttempted(c);
     return c.stage===_flowFilter;
   });
 
@@ -9235,14 +9239,21 @@ function renderFlowTab(){
       b4.textContent="👍 Positive Follow Up";
       b4.onclick=(function(id){ return function(){ setFlowStage(id,"positive_followup","positive_followup"); }; })(c.id);
       actions.appendChild(b1); actions.appendChild(b2); actions.appendChild(b3); actions.appendChild(b4);
-    } else if(isOutcome(c)){
-      if((c.stage==="no_answer"||c.stage==="left_message")&&!c.call2Date){
+    } else if(isAttempted(c)){
+      // Not a real outcome — nobody was actually reached — so offer a second
+      // attempt (if not already used) rather than treating this as resolved.
+      if(!c.call2Date){
         var cb=document.createElement("button"); cb.className="flow-btn flow-btn-email";
         cb.textContent="📞 Call 2";
         cb.title="Log a second call attempt";
         cb.onclick=(function(id){ return function(){ markFlowCalled(id,2); }; })(c.id);
         actions.appendChild(cb);
       }
+      var rb=document.createElement("button"); rb.className="flow-btn flow-btn-reset";
+      rb.textContent="↩ Reset to Called";
+      rb.onclick=(function(id){ return function(){ setFlowStage(id,"call",null); }; })(c.id);
+      actions.appendChild(rb);
+    } else if(isOutcome(c)){
       var rb=document.createElement("button"); rb.className="flow-btn flow-btn-reset";
       rb.textContent="↩ Reset to Called";
       rb.onclick=(function(id){ return function(){ setFlowStage(id,"call",null); }; })(c.id);
