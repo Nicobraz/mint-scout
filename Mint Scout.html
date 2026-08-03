@@ -3670,17 +3670,43 @@ function playerPropertyKeys(p){
   return [];
 }
 
-// Pushes a Contact's name/phone/email onto every property card it's linked
-// to, so linking (or editing) a Contact updates those property cards too —
-// mirrors what the star button already does in the other direction. Never
-// clears a field (only writes truthy values), so unlinking a property later
-// doesn't wipe out its manager info.
+// Keeps manager/phone/email in sync across propData, the matching Current
+// Clients record, and any linked Contact, so filling it in anywhere pushes
+// it to every other place representing the same real-world property — the
+// point being you only have to type it once. Only writes truthy phone/email
+// (never blanks them); manager is written whenever explicitly passed
+// (including "", so intentionally clearing a name still propagates).
+// Deliberately excludes Leads (unvetted prospecting data) and notes fields
+// (property notes vs. client service notes serve different purposes even
+// though they share a field name).
+function syncPropertyContactInfo(key, fields){
+  if(!key) return;
+  if(!propData[key]) propData[key]={};
+  if(fields.manager!==undefined) propData[key].manager=fields.manager;
+  if(fields.phone) propData[key].phone=fields.phone;
+  if(fields.email) propData[key].email=fields.email;
+
+  var cp=(customData.clientProps||[]).find(function(x){ return x.key===key; });
+  if(cp){
+    if(fields.manager!==undefined) cp.manager=fields.manager;
+    if(fields.phone) cp.phone=fields.phone;
+    if(fields.email) cp.email=fields.email;
+  }
+
+  (customData.players||[]).forEach(function(p){
+    if(playerPropertyKeys(p).indexOf(key)>-1){
+      if(fields.manager) p.name=fields.manager;
+      if(fields.phone) p.phone=fields.phone;
+      if(fields.email) p.email=fields.email;
+    }
+  });
+}
+
+// Pushes a Contact's name/phone/email onto every property it's linked to —
+// mirrors what the star button already does in the other direction.
 function syncPlayerToLinkedProperties(player){
   playerPropertyKeys(player).forEach(function(key){
-    if(!propData[key]) propData[key]={};
-    if(player.name)  propData[key].manager=player.name;
-    if(player.phone) propData[key].phone=player.phone;
-    if(player.email) propData[key].email=player.email;
+    syncPropertyContactInfo(key, {manager:player.name, phone:player.phone, email:player.email});
   });
 }
 
@@ -3971,7 +3997,12 @@ function buildCard(r) {
     var sv=document.createElement("div"); sv.className="saved-msg";
     inp.oninput=(function(fkey,el,savedEl){ return function(){
       if(!propData[k]) propData[k]={};
-      propData[k][fkey]=el.value; saveAll();
+      propData[k][fkey]=el.value;
+      if(fkey==="manager"||fkey==="phone"||fkey==="email"){
+        var f={}; f[fkey]=el.value;
+        syncPropertyContactInfo(k,f);
+      }
+      saveAll();
       savedEl.textContent="Saved \u2713"; setTimeout(function(){ savedEl.textContent=""; },1400);
       card.className="card open "+borderClass(propData[k]);
       // Update displayed address on card header
@@ -4605,6 +4636,7 @@ function saveClientEdit() {
   cp.phone   = document.getElementById("ec-phone").value.trim();
   cp.email   = document.getElementById("ec-email").value.trim();
   cp.notes   = document.getElementById("ec-notes").value.trim();
+  syncPropertyContactInfo(cp.key, {manager:cp.manager, phone:cp.phone, email:cp.email});
   saveAll(); closeModal("editClient"); renderClients();
 }
 
@@ -4675,7 +4707,12 @@ function renderClients() {
       var inp = document.createElement("input"); inp.type = "text"; inp.className = "kp-input"; inp.placeholder = fd.ph; inp.value = cp[fd.key]||"";
       var sv = document.createElement("div"); sv.className = "kp-saved";
       inp.oninput = (function(cpObj,fk,el,savedEl){ return function(){
-        cpObj[fk]=el.value; saveAll();
+        cpObj[fk]=el.value;
+        if(fk==="manager"||fk==="phone"||fk==="email"){
+          var f={}; f[fk]=el.value;
+          syncPropertyContactInfo(cpObj.key,f);
+        }
+        saveAll();
         savedEl.textContent="Saved ✓"; setTimeout(function(){ savedEl.textContent=""; },1400);
       }; })(cp,fd.key,inp,sv);
       w.appendChild(l); w.appendChild(inp); w.appendChild(sv); fields.appendChild(w);
@@ -9022,13 +9059,12 @@ function saveFlowAddModal(){
         var outcomeStages=["not_interested","no_answer","left_message","positive_followup","appointed","no_contact"];
         c.outcome=(outcomeStages.indexOf(newStage)>-1)?newStage:null;
       }
-      // Keep the linked property card's phone/email in sync with this contact
-      // (not the manager name — a Flow contact's "name" is the property/account
-      // name, not necessarily a person, so that field is left alone here).
+      // Keep the linked property/client/contact records in sync with this
+      // Flow contact (not the manager name — a Flow contact's "name" is the
+      // property/account name, not necessarily a person, so that field is
+      // left alone here).
       if(c.sourceKey){
-        if(!propData[c.sourceKey]) propData[c.sourceKey]={};
-        if(c.phone) propData[c.sourceKey].phone=c.phone;
-        if(c.email) propData[c.sourceKey].email=c.email;
+        syncPropertyContactInfo(c.sourceKey, {phone:c.phone, email:c.email});
         saveAll();
       }
     }
