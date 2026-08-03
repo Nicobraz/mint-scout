@@ -451,6 +451,7 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
 <div class="tabs">
   <button class="tab-btn" id="btn-dash"     onclick="showTab('dash')">📊 Dashboard</button>
   <button class="tab-btn active" id="btn-map" onclick="showTab('map')">🗺 Properties</button>
+  <button class="tab-btn" id="btn-companies" onclick="showTab('companies')">🏢 Companies</button>
   <button class="tab-btn" id="btn-players"  onclick="showTab('players')">👥 Contacts</button>
   <button class="tab-btn" id="btn-clients"  onclick="showTab('clients')">✅ Current Clients</button>
   <button class="tab-btn" id="btn-nearby"   onclick="showTab('nearby')">📍 Nearby</button>
@@ -493,6 +494,16 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
     <span class="stat" id="map-stat"></span>
   </div>
   <div class="board" id="board"></div>
+</div>
+
+<!-- COMPANIES (property management groups — phone/address/website/notes,
+     backed by the same companyRegistry the Properties board's ℹ️ panel uses) -->
+<div id="pane-companies" style="display:none">
+  <div class="toolbar">
+    <input type="text" id="company-search" placeholder="Search companies..." oninput="renderCompanies()">
+    <span class="stat" id="company-stat"></span>
+  </div>
+  <div id="company-grid" class="kp-grid"></div>
 </div>
 
 <!-- CONTACTS (people: Property Manager / Regional Manager / Facility Manager —
@@ -3733,11 +3744,12 @@ function getAllRows() {
 
 // ── TAB SWITCHING ─────────────────────────────────────────────────────────
 function showTab(tab) {
-  ["dash","map","players","clients","nearby","enriched","appts","gcal","fillday","flow"].forEach(function(t) {
+  ["dash","map","companies","players","clients","nearby","enriched","appts","gcal","fillday","flow"].forEach(function(t) {
     document.getElementById("pane-"+t).style.display=(t===tab)?"":"none";
     document.getElementById("btn-"+t).classList[(t===tab)?"add":"remove"]("active");
   });
-  if(tab==="dash")     renderDash();
+  if(tab==="dash")      renderDash();
+  if(tab==="companies") renderCompanies();
   if(tab==="players")  renderPlayers();
   if(tab==="clients")  renderClients();
   if(tab==="enriched") renderEnriched();
@@ -4145,6 +4157,67 @@ function renderMap() {
     var body=document.createElement("div"); body.className="col-body";
     props.forEach(function(r){ body.appendChild(buildCard(r)); });
     col.appendChild(hdr); col.appendChild(infoPanel); col.appendChild(body); board.appendChild(col);
+  });
+}
+
+function renderCompanies(){
+  var q=(document.getElementById("company-search")||{value:""}).value.toLowerCase().trim();
+  var propCounts={};
+  getAllRows().forEach(function(r){ var co=r[1]||"No management company"; propCounts[co]=(propCounts[co]||0)+1; });
+  var contactCounts={};
+  (customData.players||[]).forEach(function(p){ if(p.company) contactCounts[p.company]=(contactCounts[p.company]||0)+1; });
+
+  var names=getUniqueCompanies().filter(function(co){ return !q||co.toLowerCase().includes(q); });
+  document.getElementById("company-stat").textContent=names.length+" compan"+(names.length===1?"y":"ies");
+
+  var wrap=document.getElementById("company-grid"); wrap.innerHTML="";
+  if(!names.length){
+    wrap.innerHTML="<div class='kp-empty'><div class='kp-empty-icon'>🏢</div><strong>No companies found</strong></div>";
+    return;
+  }
+
+  names.forEach(function(co){
+    var coRec=getCompanyRecord(co);
+    var propCount=propCounts[co]||0, contactCount=contactCounts[co]||0;
+
+    var card=document.createElement("div"); card.className="kp-card";
+
+    var top=document.createElement("div"); top.className="kp-card-top clickable"; top.title="View this company's properties";
+    top.onclick=function(e){
+      if(e.target.closest("button,input,a,select,textarea")) return;
+      showTab("map");
+      setTimeout(function(){ var s=document.getElementById("search"); if(s){ s.value=co; renderMap(); } },50);
+    };
+    var av=document.createElement("div"); av.className="kp-avatar"; av.style.background="#378ADD"; av.textContent=getInitials(co);
+    var info=document.createElement("div"); info.className="kp-info";
+    var nm=document.createElement("div"); nm.className="kp-name"; nm.textContent=co;
+    var sub=document.createElement("div"); sub.className="kp-company";
+    sub.textContent=propCount+(propCount===1?" property":" properties")+(contactCount?" · "+contactCount+" contact"+(contactCount===1?"":"s"):"");
+    info.appendChild(nm); info.appendChild(sub);
+    top.appendChild(av); top.appendChild(info);
+    card.appendChild(top);
+
+    var hr=document.createElement("hr"); hr.className="kp-divider"; card.appendChild(hr);
+
+    var fields=document.createElement("div"); fields.className="kp-fields";
+    [{key:"phone",label:"Phone",tag:"input",ph:"(801) 555-0000",full:false},
+     {key:"address",label:"Address",tag:"input",ph:"Company address...",full:false},
+     {key:"website",label:"Website",tag:"input",ph:"https://...",full:false},
+     {key:"notes",label:"Notes",tag:"textarea",ph:"Notes about this company...",full:true}].forEach(function(fd){
+      var w=document.createElement("div"); w.className="kp-field"+(fd.full?" full":"");
+      var l=document.createElement("div"); l.className="kp-label"; l.textContent=fd.label;
+      var inp=document.createElement(fd.tag); inp.className="kp-input"; inp.placeholder=fd.ph; inp.value=coRec[fd.key]||"";
+      if(fd.tag==="textarea") inp.rows=2;
+      var sv=document.createElement("div"); sv.className="kp-saved";
+      inp.oninput=(function(rec,fk,el,savedEl){ return function(){
+        rec[fk]=el.value; saveAll();
+        savedEl.textContent="Saved ✓"; setTimeout(function(){ savedEl.textContent=""; },1400);
+      }; })(coRec,fd.key,inp,sv);
+      w.appendChild(l); w.appendChild(inp); w.appendChild(sv); fields.appendChild(w);
+    });
+    card.appendChild(fields);
+
+    wrap.appendChild(card);
   });
 }
 
