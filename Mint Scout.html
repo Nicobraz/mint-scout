@@ -5366,7 +5366,15 @@ function openApptModalForProperty(name, addr, propKey){
   if(propKey) document.getElementById("appt-prop-key").value=propKey;
 }
 
+// Set by scheduleFlowContact() right after this modal opens — if still set when
+// a brand-new appointment is saved, that Flow contact is removed from the
+// pipeline (scheduling it is the endpoint of outreach). Reset here so opening
+// the modal any other way (PM Mapping, Appointments tab, etc.) never carries
+// over a stale association.
+var _apptFromFlowId=null;
+
 function openApptModal(editId){
+  _apptFromFlowId=null;
   document.getElementById("appt-modal-title").textContent=editId?"Edit Appointment":"Add Appointment";
   document.getElementById("appt-edit-id").value=editId||"";
   document.getElementById("appt-prop-key").value="";
@@ -5449,7 +5457,15 @@ function saveAppt(){
     if(idx>-1) calAppts[idx]={id:editId,summary:title,date:date,time:timeDisplay,time24:time24,address:address,street:street,city:city,zip:zip,notes:notes,propKey:linkedPropKeyForSave||calAppts[idx].propKey||"",leadId:leadId};
   } else {
     calAppts.push({id:Date.now()+"",summary:title,date:date,time:timeDisplay,time24:time24,address:address,street:street,city:city,zip:zip,notes:notes,propKey:linkedPropKeyForSave,leadId:leadId});
+    // Scheduling is the endpoint of outreach — take the contact out of the Flow
+    // pipeline it was scheduled from (set by scheduleFlowContact()).
+    if(_apptFromFlowId){
+      outreachContacts=outreachContacts.filter(function(c){ return c.id!==_apptFromFlowId; });
+      saveOutreachFlow();
+      renderFlowTab();
+    }
   }
+  _apptFromFlowId=null;
   calAppts.sort(function(a,b){ return (a.date+(a.time24||"")).localeCompare(b.date+(b.time24||"")); });
   saveCalAppts();
 
@@ -8964,6 +8980,7 @@ function scheduleFlowContact(id){
   }
   if(!addr) addr=c.apptAddress||c.city||"";
   openApptModalForProperty(c.name, addr, c.sourceKey||"");
+  _apptFromFlowId=id;
 }
 
 var _flowEditId=null;
