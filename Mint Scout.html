@@ -222,6 +222,7 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
 .tag { font-size: 10px; font-weight: 600; padding: 3px 9px; border-radius: 20px; cursor: pointer; border: 1.5px solid transparent; background: #f0f0f0; color: #666; white-space: nowrap; }
 .tag:hover { opacity: 0.8; }
 .tag.t-contacted        { border-color: #3498db; color: #3498db; }
+.tag.t-emailed          { border-color: #2ecc71; color: #2ecc71; }
 .tag.t-met-in-person    { border-color: #9b59b6; color: #9b59b6; }
 .tag.t-estimate-sent    { border-color: #f39c12; color: #f39c12; }
 .tag.t-interested       { border-color: #1D9E75; color: #1D9E75; }
@@ -230,6 +231,7 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
 .tag.t-proposal-sent    { border-color: #2980b9; color: #2980b9; }
 .tag.t-client           { border-color: #1D9E75; color: #1D9E75; }
 .tag.active.t-contacted        { background: #3498db; color: #fff; border-color: #3498db; }
+.tag.active.t-emailed          { background: #2ecc71; color: #fff; border-color: #2ecc71; }
 .tag.active.t-met-in-person    { background: #9b59b6; color: #fff; border-color: #9b59b6; }
 .tag.active.t-estimate-sent    { background: #f39c12; color: #fff; border-color: #f39c12; }
 .tag.active.t-interested       { background: #1D9E75; color: #fff; border-color: #1D9E75; }
@@ -2642,9 +2644,47 @@ var STATUS_LABELS = { contacted:"Contacted", interested:"Interested", "not-inter
 
 var TAGS = [
   { key:"contacted",      label:"Contacted",      color:"#3498db", weight:1 },
-  { key:"met-in-person",  label:"Met In Person",  color:"#9b59b6", weight:2 },
-  { key:"estimate-sent",  label:"Estimate Sent",  color:"#f39c12", weight:3 },
+  { key:"emailed",        label:"Emailed",        color:"#2ecc71", weight:2 },
+  { key:"met-in-person",  label:"Met In Person",  color:"#9b59b6", weight:3 },
+  { key:"estimate-sent",  label:"Estimate Sent",  color:"#f39c12", weight:4 },
 ];
+
+// Generic tag-pill row, mirrors buildTypeTagRow()'s (currentSelection, onToggle) shape.
+function buildTagRow(currentTags, onToggle){
+  var row=document.createElement("div"); row.className="tag-row";
+  TAGS.forEach(function(t){
+    var btn=document.createElement("button");
+    var active=currentTags.indexOf(t.key)>-1;
+    btn.className="tag t-"+t.key+(active?" active":"");
+    btn.textContent=t.label;
+    btn.onclick=function(e){ e.stopPropagation(); onToggle(t.key); };
+    row.appendChild(btn);
+  });
+  return row;
+}
+
+// Resolves where a contact's tags live: if the record has a resolvable property
+// identity key (sourceKey or key, in pkey() "name|company|city" format), tags are
+// shared via propData[key].tags — the same record PM Mapping/Nearby/Clients already
+// read. Otherwise tags live locally on the record itself (contacts with no
+// matching property: manual Flow adds, Apollo/Apify leads).
+function contactTagStore(record, localSaveFn){
+  var sharedKey=record.sourceKey||record.key||"";
+  if(sharedKey){
+    if(!propData[sharedKey]) propData[sharedKey]={};
+    if(!propData[sharedKey].tags) propData[sharedKey].tags=[];
+    return {tags:propData[sharedKey].tags, save:saveAll};
+  }
+  if(!record.tags) record.tags=[];
+  return {tags:record.tags, save:localSaveFn};
+}
+
+function toggleContactTag(record, tagKey, localSaveFn){
+  var store=contactTagStore(record, localSaveFn);
+  var idx=store.tags.indexOf(tagKey);
+  if(idx>-1) store.tags.splice(idx,1); else store.tags.push(tagKey);
+  store.save();
+}
 
 // ── PROPERTY TYPE TAGS ────────────────────────────────────────────────────
 var DEFAULT_TYPE_TAGS = [
@@ -4307,8 +4347,17 @@ function renderPlayers() {
     var lbl=document.createElement("label"); lbl.htmlFor=chkId; lbl.textContent="Current client";
     tog.appendChild(chk); tog.appendChild(lbl);
 
+    // Contact tags (Contacted / Emailed / Met In Person / Estimate Sent) — separate
+    // from the status pills above; shared via propData when promoted from a PM
+    // Mapping card (sourceKey set), local to this player otherwise.
+    var tagRow=buildTagRow(contactTagStore(player, saveAll).tags, function(tagKey){
+      toggleContactTag(player, tagKey, saveAll);
+      renderPlayers();
+    });
+    tagRow.style.marginTop="6px";
+
     card.appendChild(actions); card.appendChild(top); card.appendChild(hr);
-    card.appendChild(fields); card.appendChild(srow); card.appendChild(tog);
+    card.appendChild(fields); card.appendChild(srow); card.appendChild(tagRow); card.appendChild(tog);
     grid.appendChild(card);
   });
 }
@@ -4443,6 +4492,15 @@ function renderClients() {
       w.appendChild(l); w.appendChild(inp); w.appendChild(sv); fields.appendChild(w);
     });
     card.appendChild(fields);
+
+    // Contact tags (Contacted / Emailed / Met In Person / Estimate Sent) — shared
+    // via propData[cp.key], same record PM Mapping/Nearby read.
+    var tagRow=buildTagRow(contactTagStore(cp, saveAll).tags, function(tagKey){
+      toggleContactTag(cp, tagKey, saveAll);
+      renderClients();
+    });
+    tagRow.style.cssText="margin:8px 0 0";
+    card.appendChild(tagRow);
 
     // Type tags
     var tTypeLabel=document.createElement("div"); tTypeLabel.className="kp-label"; tTypeLabel.style.marginTop="8px"; tTypeLabel.textContent="Property Type";
@@ -6376,12 +6434,22 @@ function renderNearbyResults(origin,radius,rows){
     var tdEmail=document.createElement("td"); tdEmail.style.cssText="font-size:12px;padding:12px 10px;white-space:nowrap";
     if(d.email){ var eLink=document.createElement("a"); eLink.href="mailto:"+d.email; eLink.textContent=d.email; eLink.style.cssText="color:#378ADD;text-decoration:none"; eLink.onclick=function(e){e.stopPropagation();}; tdEmail.appendChild(eLink); } else { tdEmail.textContent="—"; tdEmail.style.color="#ccc"; }
     var tdTags=document.createElement("td");
-    (d.tags||[]).forEach(function(tk){
-      var t=TAGS.find(function(tt){ return tt.key===tk; });
-      if(t){ var sp=document.createElement("span"); sp.className="tag t-"+tk+" active";
-        sp.style.cssText="font-size:9px;padding:1px 5px;margin-right:2px;pointer-events:none;display:inline-block";
-        sp.textContent=t.label; tdTags.appendChild(sp); }
-    });
+    (function(){
+      var pk=pkey(r);
+      function renderTagsCell(){
+        tdTags.innerHTML="";
+        var row=buildTagRow((propData[pk]||{}).tags||[], function(tagKey){
+          toggleContactTag({key:pk}, tagKey, saveAll);
+          renderTagsCell();
+        });
+        row.style.cssText="margin:0;gap:3px";
+        Array.prototype.forEach.call(row.querySelectorAll(".tag"), function(btn){
+          btn.style.fontSize="9px"; btn.style.padding="1px 6px";
+        });
+        tdTags.appendChild(row);
+      }
+      renderTagsCell();
+    })();
     var tdEdit=document.createElement("td"); tdEdit.style.cssText="text-align:center;white-space:nowrap;padding:12px 10px;display:flex;gap:6px;align-items:center";
     var editBtn=document.createElement("button");
     editBtn.style.cssText="background:none;border:1px solid #ddd;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer;color:#555";
@@ -6739,7 +6807,7 @@ function renderGLeads(){
       if(bucket==="contacted"&&!isContacted) return;
       if(recurringOnly&&!l.recurring) return;
       if(q&&!(l.name+l.category+l.address+l.city+(l.notes||"")).toLowerCase().includes(q)) return;
-      items.push({src:"apify",name:l.name,company:l.category||"",city:l.city||"",address:l.address||"",phone:l.phone||"",notes:l.notes||"",tags:[],status:l.status||"new",recurring:l.recurring,website:l.website||"",id:l.id});
+      items.push({src:"apify",name:l.name,company:l.category||"",city:l.city||"",address:l.address||"",phone:l.phone||"",notes:l.notes||"",tags:l.tags||[],status:l.status||"new",recurring:l.recurring,website:l.website||"",id:l.id});
     });
   }
 
@@ -6794,15 +6862,23 @@ function renderGLeads(){
 
     var statusHtml="";
     if(item.src==="pm"){
-      statusHtml=item.tags.length?item.tags.map(function(tk){
-        var t=TAGS.find(function(x){ return x.key===tk; }); if(!t) return "";
-        return '<span style="display:inline-block;margin:1px 2px 1px 0;padding:2px 6px;border-radius:8px;font-size:9px;background:'+t.color+'22;color:'+t.color+';font-weight:600">'+t.label+'</span>';
-      }).join(""):'<span style="color:#ccc;font-size:10px">No tags yet</span>';
+      statusHtml='<div class="tag-row" style="margin:0;gap:3px">';
+      TAGS.forEach(function(t){
+        var active=item.tags.indexOf(t.key)>-1;
+        statusHtml+='<button class="tag t-'+t.key+(active?' active':'')+'" style="font-size:9px;padding:1px 6px" onclick="toggleGLeadPmTag(\''+item.key+'\',\''+t.key+'\')">'+t.label+'</button>';
+      });
+      statusHtml+='</div>';
     } else {
       var si=gleadStatusInfo(item.status||"new");
       statusHtml='<div style="position:relative;display:inline-block"><select onchange="gleadSetStatus(\''+item.id+'\',this.value)" style="appearance:none;padding:3px 22px 3px 8px;border-radius:12px;border:none;background:'+si.bg+';color:'+si.color+';font-size:11px;font-weight:600;cursor:pointer">';
       GLEAD_STATUSES.forEach(function(s){ statusHtml+='<option value="'+s.key+'"'+(s.key===(item.status||"new")?" selected":"")+'>'+s.label+'</option>'; });
       statusHtml+='</select><span style="position:absolute;right:6px;top:50%;transform:translateY(-50%);pointer-events:none;font-size:9px;color:'+si.color+'">▾</span></div>';
+      statusHtml+='<div class="tag-row" style="margin:4px 0 0;gap:3px">';
+      TAGS.forEach(function(t){
+        var active=(item.tags||[]).indexOf(t.key)>-1;
+        statusHtml+='<button class="tag t-'+t.key+(active?' active':'')+'" style="font-size:9px;padding:1px 6px" onclick="toggleGLeadApifyTag(\''+item.id+'\',\''+t.key+'\')">'+t.label+'</button>';
+      });
+      statusHtml+='</div>';
     }
 
     var notesHtml=item.src==="apify"
@@ -6827,6 +6903,18 @@ function renderGLeads(){
 
   html+='</tbody></table></div>';
   wrap.innerHTML=html;
+}
+
+function toggleGLeadPmTag(key, tagKey){
+  toggleContactTag({key:key}, tagKey, saveAll);
+  renderGLeads();
+}
+
+function toggleGLeadApifyTag(id, tagKey){
+  var l=googleLeads.find(function(x){ return x.id===id; });
+  if(!l) return;
+  toggleContactTag(l, tagKey, saveGoogleLeads);
+  renderGLeads();
 }
 
 function gleadSetStatus(id,val){
@@ -7137,6 +7225,13 @@ var _enrichedFilter = "new";
 function loadEnriched(){ try{ var e=localStorage.getItem("pmEnriched"); if(e) enrichedContacts=JSON.parse(e); }catch(e){} }
 function saveEnriched(){ try{ localStorage.setItem("pmEnriched",JSON.stringify(enrichedContacts)); }catch(e){} }
 
+function toggleEnrichedContactTag(id, tagKey){
+  var c=enrichedContacts.find(function(x){ return x.id===id; });
+  if(!c) return;
+  toggleContactTag(c, tagKey, saveEnriched);
+  renderEnriched();
+}
+
 // ── CSV IMPORT (Apollo export) ─────────────────────────────────────────────
 function importApolloCsv(inputEl){
   var file=inputEl.files[0]; if(!file) return;
@@ -7427,6 +7522,14 @@ function renderEnriched(){
 
       // Notes
       html+='<textarea placeholder="Notes..." onblur="saveEnrichedNote(\''+c.id+'\',this.value)" style="margin-top:8px;width:100%;font-size:11px;border:1px solid #eee;border-radius:6px;padding:5px 8px;resize:vertical;min-height:34px;font-family:inherit;color:#444;box-sizing:border-box">'+safeNotes+'</textarea>';
+
+      // Contact tags (Contacted / Emailed / Met In Person / Estimate Sent)
+      html+='<div class="tag-row" style="margin-top:8px;margin-bottom:0">';
+      TAGS.forEach(function(t){
+        var active=(c.tags||[]).indexOf(t.key)>-1;
+        html+='<button class="tag t-'+t.key+(active?' active':'')+'" onclick="toggleEnrichedContactTag(\''+c.id+'\',\''+t.key+'\')">'+t.label+'</button>';
+      });
+      html+='</div>';
 
       // Stage actions
       html+='<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">';
@@ -8924,6 +9027,13 @@ function renderFlowTab(){
     notesEl.rows=1;
     notesEl.onchange=(function(id){ return function(){ var contact=outreachContacts.find(function(x){return x.id===id;}); if(contact){contact.notes=this.value; saveOutreachFlow();} }; })(c.id);
     left.appendChild(notesEl);
+
+    var tagRow=buildTagRow(contactTagStore(c, saveOutreachFlow).tags, function(tagKey){
+      toggleContactTag(c, tagKey, saveOutreachFlow);
+      renderFlowTab();
+    });
+    tagRow.style.marginTop="6px";
+    left.appendChild(tagRow);
     card.appendChild(left);
 
     var actions=document.createElement("div"); actions.className="flow-card-actions";
