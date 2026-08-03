@@ -509,7 +509,7 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
       <option value="contacted">Contacted</option>
       <option value="not-interested">Not Interested</option>
     </select>
-    <button class="btn btn-gold" onclick="openModal('addPlayer')">+ Add Key Contact</button>
+    <button class="btn btn-gold" onclick="openModal('addPlayer')">+ Add Contact</button>
     <span class="stat" id="player-stat"></span>
   </div>
   <div id="player-grid" class="kp-grid"></div>
@@ -556,10 +556,10 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
   </div>
 </div>
 
-<!-- ADD KEY PLAYER MODAL -->
+<!-- ADD/EDIT CONTACT MODAL -->
 <div class="modal-overlay" id="modal-addPlayer" onclick="if(event.target===this)closeModal('addPlayer')">
   <div class="modal">
-    <h2>Add Key Contact</h2>
+    <h2 id="kp-modal-title">Add Contact</h2>
     <div class="modal-field"><div class="modal-label">Full Name *</div><input class="modal-input" id="kp-new-name" type="text" placeholder="e.g. John Smith"></div>
     <div class="modal-field">
       <div class="modal-label">Company</div>
@@ -576,9 +576,15 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
     </div>
     <div class="modal-field"><div class="modal-label">Phone</div><input class="modal-input" id="kp-new-phone" type="text" placeholder="(801) 555-0000"></div>
     <div class="modal-field"><div class="modal-label">Email</div><input class="modal-input" id="kp-new-email" type="text" placeholder="name@company.com"></div>
+    <div class="modal-field">
+      <div class="modal-label">Linked Properties</div>
+      <div id="kp-linked-props-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:6px"></div>
+      <input class="modal-input" id="kp-prop-search" type="text" placeholder="Search property name or address to link..." oninput="filterKpPropSuggestions()" autocomplete="off">
+      <div id="kp-prop-suggestions" style="max-height:160px;overflow-y:auto;border:1px solid #eee;border-radius:6px;margin-top:4px;display:none;background:#fff;box-shadow:0 4px 12px rgba(0,0,0,.1)"></div>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-cancel" onclick="closeModal('addPlayer')">Cancel</button>
-      <button class="btn btn-gold" onclick="submitAddPlayer()">Add Key Contact</button>
+      <button class="btn btn-gold" id="kp-save-btn" onclick="submitAddPlayer()">Add Contact</button>
     </div>
   </div>
 </div>
@@ -3803,19 +3809,19 @@ function buildCard(r) {
     left.appendChild(cy);
   }
   var chev=document.createElement("span"); chev.className="card-chevron"; chev.textContent="▾";
-  // Star button — links this property's manager to a Key Contact. If the same
-  // person is already a Key Contact (matched by name+company, since one person
+  // Star button — links this property's manager to a Contact. If the same
+  // person is already a Contact (matched by name+company, since one person
   // can oversee multiple properties), this property gets added to their
   // existing propertyKeys instead of creating a duplicate contact.
   var isStarred = (customData.players||[]).some(function(p){
     return playerPropertyKeys(p).indexOf(k)>-1;
   });
-  var star=document.createElement("button"); star.className="card-btn card-star"+(isStarred?" starred":""); star.title=isStarred?"Already linked to a Key Contact":"Link property manager to Key Contacts"; star.textContent="\u2605";
+  var star=document.createElement("button"); star.className="card-btn card-star"+(isStarred?" starred":""); star.title=isStarred?"Already linked to a Contact":"Link property manager to Contacts"; star.textContent="\u2605";
   star.onclick=function(e){
     e.stopPropagation();
     var alreadyLinked=(customData.players||[]).some(function(p){ return playerPropertyKeys(p).indexOf(k)>-1; });
     if(alreadyLinked){
-      alert("This property is already linked to a Key Contact.");
+      alert("This property is already linked to a Contact.");
       return;
     }
     var d=propData[k]||{};
@@ -3854,7 +3860,7 @@ function buildCard(r) {
     }
     saveAll();
     star.classList.add("starred");
-    star.title="Already linked to a Key Contact";
+    star.title="Already linked to a Contact";
     // Flash confirmation
     star.style.transform="scale(1.4)";
     setTimeout(function(){ star.style.transform=""; },300);
@@ -4102,7 +4108,14 @@ function openModal(name) {
   if(name==="addProperty"||name==="addPlayer") populateCompanyDropdown(name==="addProperty"?"new-prop-company":"kp-new-company", name==="addProperty"?"new-company-name-wrap":"kp-new-company-wrap");
   if(name==="addProperty"){ document.getElementById("new-prop-name").value=""; document.getElementById("new-prop-city").value=""; document.getElementById("new-prop-address").value=""; document.getElementById("new-prop-newcompany").value=""; document.getElementById("new-company-name-wrap").style.display="none"; }
   if(name==="addCompany")  { document.getElementById("new-company-name").value=""; }
-  if(name==="addPlayer")   { ["kp-new-name","kp-new-title","kp-new-phone","kp-new-email","kp-new-company-input"].forEach(function(id){ document.getElementById(id).value=""; }); document.getElementById("kp-new-company-wrap").style.display="none"; }
+  if(name==="addPlayer")   {
+    ["kp-new-name","kp-new-title","kp-new-phone","kp-new-email","kp-new-company-input","kp-prop-search"].forEach(function(id){ document.getElementById(id).value=""; });
+    document.getElementById("kp-new-company-wrap").style.display="none";
+    document.getElementById("kp-modal-title").textContent="Add Contact";
+    document.getElementById("kp-save-btn").textContent="Add Contact";
+    _kpEditingPropertyKeys=[];
+    renderKpLinkedProps();
+  }
   document.getElementById("modal-"+name).classList.add("open");
   setTimeout(function(){ var inp=document.querySelector("#modal-"+name+" input"); if(inp) inp.focus(); },50);
 }
@@ -4274,6 +4287,72 @@ function getInitials(name) {
   var parts=name.trim().split(" "); return (parts[0][0]+(parts.length>1?parts[parts.length-1][0]:"")).toUpperCase();
 }
 
+// Properties linked to whichever contact is currently open in the Add/Edit
+// Contact modal — a plain in-memory list edited via the search box below,
+// committed onto the record's propertyKeys only when the modal is saved.
+var _kpEditingPropertyKeys=[];
+
+function renderKpLinkedProps(){
+  var wrap=document.getElementById("kp-linked-props-list");
+  if(!wrap) return;
+  wrap.innerHTML="";
+  if(!_kpEditingPropertyKeys.length){
+    var empty=document.createElement("div"); empty.style.cssText="font-size:12px;color:#aaa";
+    empty.textContent="No properties linked yet.";
+    wrap.appendChild(empty);
+    return;
+  }
+  var rows=getAllRows();
+  _kpEditingPropertyKeys.forEach(function(key){
+    var row=rows.find(function(r){ return pkey(r)===key; });
+    var label=row?(row[0]+(row[2]?" ("+row[2]+")":"")):key.split("|")[0];
+    var chip=document.createElement("div");
+    chip.style.cssText="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 10px;background:#f8f8f8;border-radius:6px;font-size:12px";
+    var lbl=document.createElement("span"); lbl.textContent=label;
+    var rm=document.createElement("button"); rm.textContent="×"; rm.title="Unlink property";
+    rm.style.cssText="background:none;border:none;color:#e74c3c;font-size:16px;cursor:pointer;line-height:1;padding:0";
+    rm.onclick=(function(k){ return function(){
+      _kpEditingPropertyKeys=_kpEditingPropertyKeys.filter(function(x){ return x!==k; });
+      renderKpLinkedProps();
+    }; })(key);
+    chip.appendChild(lbl); chip.appendChild(rm);
+    wrap.appendChild(chip);
+  });
+}
+
+function filterKpPropSuggestions(){
+  var q=document.getElementById("kp-prop-search").value.trim().toLowerCase();
+  var box=document.getElementById("kp-prop-suggestions");
+  if(!q||q.length<2){ box.style.display="none"; return; }
+  var rows=getAllRows();
+  var matches=rows.filter(function(r){
+    var k=pkey(r);
+    if(_kpEditingPropertyKeys.indexOf(k)>-1) return false;
+    var d=propData[k]||{};
+    var addr=r[3]||d.address||"";
+    return r[0].toLowerCase().includes(q)||addr.toLowerCase().includes(q);
+  }).slice(0,8);
+  if(!matches.length){ box.style.display="none"; return; }
+  box.innerHTML=""; box.style.display="block";
+  matches.forEach(function(r){
+    var d=propData[pkey(r)]||{};
+    var addr=r[3]||d.address||"";
+    var item=document.createElement("div");
+    item.style.cssText="padding:7px 10px;cursor:pointer;border-bottom:1px solid #f5f5f5;font-size:12px";
+    item.innerHTML="<b>"+r[0]+"</b><span style='color:#888;margin-left:6px'>"+addr+"</span>";
+    item.onmouseover=function(){ item.style.background="#f6fdf9"; };
+    item.onmouseout=function(){ item.style.background=""; };
+    item.onclick=(function(row){ return function(){
+      var k=pkey(row);
+      if(_kpEditingPropertyKeys.indexOf(k)===-1) _kpEditingPropertyKeys.push(k);
+      document.getElementById("kp-prop-search").value="";
+      box.style.display="none";
+      renderKpLinkedProps();
+    }; })(r);
+    box.appendChild(item);
+  });
+}
+
 function submitAddPlayer() {
   var name=document.getElementById("kp-new-name").value.trim(); if(!name){ alert("Name is required."); return; }
   var company=resolveCompany("kp-new-company","kp-new-company-input"); if(company===null) return;
@@ -4291,6 +4370,9 @@ function submitAddPlayer() {
     if(title) existing.title=title;
     if(phone) existing.phone=phone;
     if(email) existing.email=email;
+    var existingKeys=playerPropertyKeys(existing);
+    _kpEditingPropertyKeys.forEach(function(k){ if(existingKeys.indexOf(k)===-1) existingKeys.push(k); });
+    existing.propertyKeys=existingKeys;
   } else {
     customData.players.push({
       id: Date.now()+"",
@@ -4302,7 +4384,7 @@ function submitAddPlayer() {
       notes: "",
       status: "",
       isClient: false,
-      propertyKeys: []
+      propertyKeys: _kpEditingPropertyKeys.slice()
     });
   }
   saveAll(); closeModal("addPlayer"); renderPlayers();
@@ -4326,7 +4408,7 @@ function renderPlayers() {
   var grid=document.getElementById("player-grid"); grid.innerHTML="";
 
   if(filtered.length===0){
-    grid.innerHTML="<div class='kp-empty'><div class='kp-empty-icon'>⭐</div><strong>No key contacts yet</strong><br><br>Click <strong>+ Add Key Contact</strong> to track important decision makers, managers, and champions.</div>";
+    grid.innerHTML="<div class='kp-empty'><div class='kp-empty-icon'>⭐</div><strong>No contacts yet</strong><br><br>Click <strong>+ Add Contact</strong> to track property managers, regional managers, and other decision makers.</div>";
     return;
   }
 
@@ -4340,7 +4422,7 @@ function renderPlayers() {
     editBtn.onclick=(function(pid){ return function(){ openEditPlayer(pid); }; })(player.id);
     var delBtn=document.createElement("button"); delBtn.className="kp-action-btn del"; delBtn.textContent="\u00d7"; delBtn.title="Delete";
     delBtn.onclick=(function(pid){ return function(){
-      if(!confirm("Remove this key player?")) return;
+      if(!confirm("Remove this contact?")) return;
       customData.players=customData.players.filter(function(p){ return p.id!==pid; });
       saveAll(); renderPlayers();
     }; })(player.id);
@@ -4449,6 +4531,11 @@ function openEditPlayer(pid) {
   document.getElementById("kp-new-phone").value=player.phone||"";
   document.getElementById("kp-new-email").value=player.email||"";
   document.getElementById("kp-new-company-wrap").style.display="none";
+  document.getElementById("kp-prop-search").value="";
+  document.getElementById("kp-modal-title").textContent="Edit Contact";
+  document.getElementById("kp-save-btn").textContent="Save Changes";
+  _kpEditingPropertyKeys=playerPropertyKeys(player).slice();
+  renderKpLinkedProps();
   setTimeout(function(){ document.getElementById("kp-new-company").value=player.company||""; },10);
   document.getElementById("modal-addPlayer").classList.add("open");
   // Override submit to update instead of create
@@ -4456,7 +4543,7 @@ function openEditPlayer(pid) {
     var name=document.getElementById("kp-new-name").value.trim(); if(!name){ alert("Name required."); return; }
     var company=resolveCompany("kp-new-company","kp-new-company-input"); if(company===null) return;
     customData.players.forEach(function(p){
-      if(p.id===pid){ p.name=name; p.company=company; p.title=document.getElementById("kp-new-title").value.trim(); p.phone=document.getElementById("kp-new-phone").value.trim(); p.email=document.getElementById("kp-new-email").value.trim(); }
+      if(p.id===pid){ p.name=name; p.company=company; p.title=document.getElementById("kp-new-title").value.trim(); p.phone=document.getElementById("kp-new-phone").value.trim(); p.email=document.getElementById("kp-new-email").value.trim(); p.propertyKeys=_kpEditingPropertyKeys.slice(); }
     });
     saveAll(); closeModal("addPlayer");
     document.querySelector("#modal-addPlayer .btn-gold").onclick=submitAddPlayer;
@@ -4762,7 +4849,7 @@ function renderOutreach() {
   var currentTier = null;
   var tierLabels = {
     1: "🔥 Top Priority — Estimate sent or strong in-progress",
-    2: "⭐ Good Target — Same city as a client or key player known",
+    2: "⭐ Good Target — Same city as a client or contact known",
     3: "📋 Cold — Not yet contacted"
   };
 
@@ -4822,7 +4909,7 @@ function renderOutreach() {
     // Tags
     var tagsDiv = document.createElement("div"); tagsDiv.className="outreach-tags";
     if (s.hasKP) {
-      var b=document.createElement("span"); b.className="tag-badge"; b.style.background="#f0a500"; b.textContent="★ Key Player"; tagsDiv.appendChild(b);
+      var b=document.createElement("span"); b.className="tag-badge"; b.style.background="#f0a500"; b.textContent="★ Contact"; tagsDiv.appendChild(b);
     }
     s.tags.forEach(function(tk){
       var t=TAGS.find(function(x){ return x.key===tk; });
@@ -4884,7 +4971,7 @@ function renderDash() {
   var statData = [
     { num: rows.length,            label: "Total Accounts",    color: "#378ADD" },
     { num: clientProps.length,     label: "Current Clients",   color: "#1D9E75" },
-    { num: allPlayers.length,      label: "Key Contacts",      color: "#f0a500" },
+    { num: allPlayers.length,      label: "Contacts",      color: "#f0a500" },
     { num: totalTagged,            label: "Accounts Tracked",  color: "#9b59b6" },
     { num: tagCounts.contacted,    label: "Contacted",         color: "#3498db" },
     { num: tagCounts["met-in-person"], label: "Met In Person", color: "#9b59b6" },
