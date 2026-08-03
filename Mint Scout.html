@@ -8919,6 +8919,21 @@ function setFlowStage(id, stage, outcome){
   renderFlowTab();
 }
 
+// Records a call attempt's date (round 1 or 2) and puts the contact into the
+// Called stage ready for an outcome. Round 1 fires from "Mark Called" (or the
+// no-email skip); round 2 only appears as a follow-up option after a No
+// Answer/Left Message outcome — see renderFlowCard's isOutcome branch.
+function markFlowCalled(id, round){
+  var c=outreachContacts.find(function(x){ return x.id===id; });
+  if(!c) return;
+  var today=new Date().toISOString().slice(0,10);
+  if(round===2) c.call2Date=today; else c.call1Date=today;
+  c.stage="call";
+  c.outcome=null;
+  saveOutreachFlow();
+  renderFlowTab();
+}
+
 function removeFromFlow(id){
   outreachContacts=outreachContacts.filter(function(c){ return c.id!==id; });
   saveOutreachFlow();
@@ -9150,6 +9165,8 @@ function renderFlowTab(){
     if(c.city) parts.push(c.city);
     if(c.phone) parts.push(c.phone);
     if(c.email) parts.push(c.email);
+    if(c.call1Date) parts.push("Call 1: "+formatApptDate(c.call1Date));
+    if(c.call2Date) parts.push("Call 2: "+formatApptDate(c.call2Date));
     sub.textContent=parts.join(" · ")||"";
     clickArea.appendChild(sub);
     left.appendChild(clickArea);
@@ -9196,13 +9213,13 @@ function renderFlowTab(){
         var b=document.createElement("button"); b.className="flow-btn flow-btn-email";
         b.textContent="📞 No Email — Skip to Call";
         b.title="No email on file — skip straight to calling";
-        b.onclick=(function(id){ return function(){ setFlowStage(id,"call",null); }; })(c.id);
+        b.onclick=(function(id){ return function(){ markFlowCalled(id,1); }; })(c.id);
         actions.appendChild(b);
       }
     } else if(c.stage==="email"){
       var b=document.createElement("button"); b.className="flow-btn flow-btn-email";
-      b.textContent="📞 Mark Called";
-      b.onclick=(function(id){ return function(){ setFlowStage(id,"call",null); }; })(c.id);
+      b.textContent="📞 Call 1";
+      b.onclick=(function(id){ return function(){ markFlowCalled(id,1); }; })(c.id);
       actions.appendChild(b);
     } else if(c.stage==="call"){
       var b1=document.createElement("button"); b1.className="flow-btn flow-btn-decline";
@@ -9219,6 +9236,13 @@ function renderFlowTab(){
       b4.onclick=(function(id){ return function(){ setFlowStage(id,"positive_followup","positive_followup"); }; })(c.id);
       actions.appendChild(b1); actions.appendChild(b2); actions.appendChild(b3); actions.appendChild(b4);
     } else if(isOutcome(c)){
+      if((c.stage==="no_answer"||c.stage==="left_message")&&!c.call2Date){
+        var cb=document.createElement("button"); cb.className="flow-btn flow-btn-email";
+        cb.textContent="📞 Call 2";
+        cb.title="Log a second call attempt";
+        cb.onclick=(function(id){ return function(){ markFlowCalled(id,2); }; })(c.id);
+        actions.appendChild(cb);
+      }
       var rb=document.createElement("button"); rb.className="flow-btn flow-btn-reset";
       rb.textContent="↩ Reset to Called";
       rb.onclick=(function(id){ return function(){ setFlowStage(id,"call",null); }; })(c.id);
