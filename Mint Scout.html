@@ -5463,12 +5463,12 @@ function saveAppt(){
     if(idx>-1) calAppts[idx]={id:editId,summary:title,date:date,time:timeDisplay,time24:time24,address:address,street:street,city:city,zip:zip,notes:notes,propKey:linkedPropKeyForSave||calAppts[idx].propKey||"",leadId:leadId};
   } else {
     calAppts.push({id:Date.now()+"",summary:title,date:date,time:timeDisplay,time24:time24,address:address,street:street,city:city,zip:zip,notes:notes,propKey:linkedPropKeyForSave,leadId:leadId});
-    // Scheduling is the endpoint of outreach — take the contact out of the Flow
-    // pipeline it was scheduled from (set by scheduleFlowContact()).
+    // Scheduling is the endpoint of outreach — mark the contact it was
+    // scheduled from (set by scheduleFlowContact()) as an Appointment Set
+    // outcome rather than removing it, so it's still visible under Outcomes.
     if(_apptFromFlowId){
-      outreachContacts=outreachContacts.filter(function(c){ return c.id!==_apptFromFlowId; });
-      saveOutreachFlow();
-      renderFlowTab();
+      var flowC=outreachContacts.find(function(c){ return c.id===_apptFromFlowId; });
+      if(flowC){ flowC.stage="appointed"; flowC.outcome="appointed"; saveOutreachFlow(); renderFlowTab(); }
     }
   }
   _apptFromFlowId=null;
@@ -8904,6 +8904,7 @@ var FLOW_STAGES=[
   {key:"research",   label:"Research",       btnLabel:"✉ Mark Emailed",        nextStage:"email",   btnClass:"flow-btn-research"},
   {key:"email",      label:"Email Sent",     btnLabel:"📞 Mark Called",         nextStage:"call",    btnClass:"flow-btn-email"},
   {key:"call",       label:"Called",         btnLabel:null,                     nextStage:null,      btnClass:null},
+  {key:"appointed",         label:"Appointment Set",    btnLabel:null, nextStage:null, btnClass:null},
   {key:"not_interested",    label:"Not Interested",     btnLabel:null, nextStage:null, btnClass:null},
   {key:"no_answer",         label:"No Answer",          btnLabel:null, nextStage:null, btnClass:null},
   {key:"left_message",      label:"Left Message",       btnLabel:null, nextStage:null, btnClass:null},
@@ -9117,12 +9118,13 @@ function renderFlowTab(){
 
   // A real outcome means the person was actually reached — No Answer and Left
   // Message are failed attempts, not outcomes, so they don't count here (see
-  // isAttempted below). "appointed"/"no_contact" are legacy stage values from
-  // before scheduling (📅) took over removing contacts from Flow directly —
-  // still recognized so any contact already in one of those states keeps
-  // rendering correctly, even though new contacts can no longer land there.
+  // isAttempted below). "appointed" is set by scheduleFlowContact()/saveAppt()
+  // when an appointment is scheduled from this contact. "no_contact" is a
+  // legacy stage value from before that existed — still recognized so any
+  // contact already in that state keeps rendering correctly, even though new
+  // contacts can no longer land there.
   var isOutcome=function(c){
-    return c.stage==="not_interested"||c.stage==="positive_followup"||c.stage==="appointed";
+    return c.stage==="not_interested"||c.stage==="positive_followup"||c.stage==="appointed"||c.stage==="no_contact";
   };
   // Attempted-but-unresolved: a call was made but nobody was actually reached.
   var isAttempted=function(c){ return c.stage==="no_answer"||c.stage==="left_message"; };
