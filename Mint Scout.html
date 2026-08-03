@@ -403,6 +403,9 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
 .flow-pill-appointed     { background:#eafaf4;color:#1D9E75; }
 .flow-pill-not_interested { background:#fdecea;color:#c0392b; }
 .flow-pill-no_contact     { background:#f0f0f0;color:#888; }
+.flow-pill-no_answer      { background:#f0f0f0;color:#888; }
+.flow-pill-left_message   { background:#fff4d9;color:#d18a00; }
+.flow-pill-positive_followup { background:#eafaf4;color:#1D9E75; }
 .flow-card { background:#fff;border:1px solid #e8e8e8;border-radius:10px;padding:14px 16px;margin-bottom:8px;display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;transition:box-shadow .15s; }
 .flow-card:hover { box-shadow:0 2px 10px rgba(0,0,0,0.07); }
 .flow-card-left { flex:1;min-width:0; }
@@ -417,6 +420,9 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
 .flow-btn-appointed    { background:#1D9E75;color:#fff; }
 .flow-btn-decline  { background:#fdecea;color:#c0392b;border:1px solid #f5c6c6; }
 .flow-btn-nocontact { background:#f0f0f0;color:#666;border:1px solid #ddd; }
+.flow-btn-noanswer { background:#f0f0f0;color:#666;border:1px solid #ddd; }
+.flow-btn-leftmessage { background:#fff4d9;color:#a5670a;border:1px solid #f0dba6; }
+.flow-btn-positivefollowup { background:#1D9E75;color:#fff; }
 .flow-btn-reset    { background:#f8f8f8;color:#888;border:1px solid #ddd; }
 .flow-icon-btn { background:none; border:none; cursor:pointer; padding:6px 8px; font-size:16px; line-height:1; border-radius:6px; }
 .flow-icon-btn:hover { background:#f5f5f5; }
@@ -8898,9 +8904,10 @@ var FLOW_STAGES=[
   {key:"research",   label:"Research",       btnLabel:"✉ Mark Emailed",        nextStage:"email",   btnClass:"flow-btn-research"},
   {key:"email",      label:"Email Sent",     btnLabel:"📞 Mark Called",         nextStage:"call",    btnClass:"flow-btn-email"},
   {key:"call",       label:"Called",         btnLabel:null,                     nextStage:null,      btnClass:null},
-  {key:"appointed",  label:"Appointment Set",btnLabel:null,                     nextStage:null,      btnClass:null},
-  {key:"not_interested",label:"Not Interested",btnLabel:null,                   nextStage:null,      btnClass:null},
-  {key:"no_contact", label:"No Contact",     btnLabel:null,                     nextStage:null,      btnClass:null}
+  {key:"not_interested",    label:"Not Interested",     btnLabel:null, nextStage:null, btnClass:null},
+  {key:"no_answer",         label:"No Answer",          btnLabel:null, nextStage:null, btnClass:null},
+  {key:"left_message",      label:"Left Message",       btnLabel:null, nextStage:null, btnClass:null},
+  {key:"positive_followup", label:"Positive Follow Up", btnLabel:null, nextStage:null, btnClass:null}
 ];
 
 function setFlowStage(id, stage, outcome){
@@ -9046,7 +9053,8 @@ function saveFlowAddModal(){
       var newStage=document.getElementById("flow-add-stage").value;
       if(newStage&&newStage!==c.stage){
         c.stage=newStage;
-        c.outcome=(newStage==="appointed"||newStage==="not_interested"||newStage==="no_contact")?newStage:null;
+        var outcomeStages=["not_interested","no_answer","left_message","positive_followup","appointed","no_contact"];
+        c.outcome=(outcomeStages.indexOf(newStage)>-1)?newStage:null;
       }
       // Keep the linked property card's phone/email in sync with this contact
       // (not the manager name — a Flow contact's "name" is the property/account
@@ -9092,7 +9100,14 @@ function renderFlowTab(){
   var list=document.getElementById("flow-list");
   list.innerHTML="";
 
-  var isOutcome=function(c){ return c.stage==="appointed"||c.stage==="not_interested"||c.stage==="no_contact"; };
+  // "appointed"/"no_contact" are legacy stage values from before scheduling
+  // (📅) took over removing contacts from Flow directly — still recognized
+  // here so any contact already in one of those states keeps rendering
+  // correctly, even though new contacts can no longer land there.
+  var isOutcome=function(c){
+    return c.stage==="not_interested"||c.stage==="no_answer"||c.stage==="left_message"||c.stage==="positive_followup"
+      ||c.stage==="appointed"||c.stage==="no_contact";
+  };
 
   var filtered=outreachContacts.filter(function(c){
     if(_flowFilter==="all") return true;
@@ -9172,26 +9187,37 @@ function renderFlowTab(){
     actions.appendChild(schedBtn);
 
     if(c.stage==="research"){
-      var b=document.createElement("button"); b.className="flow-btn flow-btn-research";
-      b.textContent="✉ Mark Emailed";
-      b.onclick=(function(id){ return function(){ setFlowStage(id,"email",null); }; })(c.id);
-      actions.appendChild(b);
+      if(c.email){
+        var b=document.createElement("button"); b.className="flow-btn flow-btn-research";
+        b.textContent="✉ Mark Emailed";
+        b.onclick=(function(id){ return function(){ setFlowStage(id,"email",null); }; })(c.id);
+        actions.appendChild(b);
+      } else {
+        var b=document.createElement("button"); b.className="flow-btn flow-btn-email";
+        b.textContent="📞 No Email — Skip to Call";
+        b.title="No email on file — skip straight to calling";
+        b.onclick=(function(id){ return function(){ setFlowStage(id,"call",null); }; })(c.id);
+        actions.appendChild(b);
+      }
     } else if(c.stage==="email"){
       var b=document.createElement("button"); b.className="flow-btn flow-btn-email";
       b.textContent="📞 Mark Called";
       b.onclick=(function(id){ return function(){ setFlowStage(id,"call",null); }; })(c.id);
       actions.appendChild(b);
     } else if(c.stage==="call"){
-      var b1=document.createElement("button"); b1.className="flow-btn flow-btn-appointed";
-      b1.textContent="📅 Appt Set";
-      b1.onclick=(function(id){ return function(){ setFlowStage(id,"appointed","appointed"); }; })(c.id);
-      var b2=document.createElement("button"); b2.className="flow-btn flow-btn-decline";
-      b2.textContent="❌ Not Interested";
-      b2.onclick=(function(id){ return function(){ setFlowStage(id,"not_interested","not_interested"); }; })(c.id);
-      var b3=document.createElement("button"); b3.className="flow-btn flow-btn-nocontact";
-      b3.textContent="📵 No Contact";
-      b3.onclick=(function(id){ return function(){ setFlowStage(id,"no_contact","no_contact"); }; })(c.id);
-      actions.appendChild(b1); actions.appendChild(b2); actions.appendChild(b3);
+      var b1=document.createElement("button"); b1.className="flow-btn flow-btn-decline";
+      b1.textContent="❌ Not Interested";
+      b1.onclick=(function(id){ return function(){ setFlowStage(id,"not_interested","not_interested"); }; })(c.id);
+      var b2=document.createElement("button"); b2.className="flow-btn flow-btn-noanswer";
+      b2.textContent="📵 No Answer";
+      b2.onclick=(function(id){ return function(){ setFlowStage(id,"no_answer","no_answer"); }; })(c.id);
+      var b3=document.createElement("button"); b3.className="flow-btn flow-btn-leftmessage";
+      b3.textContent="💬 Left Message";
+      b3.onclick=(function(id){ return function(){ setFlowStage(id,"left_message","left_message"); }; })(c.id);
+      var b4=document.createElement("button"); b4.className="flow-btn flow-btn-positivefollowup";
+      b4.textContent="👍 Positive Follow Up";
+      b4.onclick=(function(id){ return function(){ setFlowStage(id,"positive_followup","positive_followup"); }; })(c.id);
+      actions.appendChild(b1); actions.appendChild(b2); actions.appendChild(b3); actions.appendChild(b4);
     } else if(isOutcome(c)){
       var rb=document.createElement("button"); rb.className="flow-btn flow-btn-reset";
       rb.textContent="↩ Reset to Called";
