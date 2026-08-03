@@ -454,6 +454,7 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
 <div class="tabs">
   <button class="tab-btn" id="btn-dash"     onclick="showTab('dash')">📊 Dashboard</button>
   <button class="tab-btn active" id="btn-map" onclick="showTab('map')">🗺 PM Mapping</button>
+  <button class="tab-btn" id="btn-contacts" onclick="showTab('contacts')">👥 Contacts</button>
   <button class="tab-btn" id="btn-players"  onclick="showTab('players')">⭐ Key Contacts</button>
   <button class="tab-btn" id="btn-clients"  onclick="showTab('clients')">✅ Current Clients</button>
   <button class="tab-btn" id="btn-nearby"   onclick="showTab('nearby')">📍 Nearby</button>
@@ -496,6 +497,16 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
     <span class="stat" id="map-stat"></span>
   </div>
   <div class="board" id="board"></div>
+</div>
+
+<!-- UNIFIED CONTACTS -->
+<div id="pane-contacts" style="display:none">
+  <div class="toolbar">
+    <input type="text" id="contact-search" placeholder="Search by name, company, phone, email, city..." oninput="renderContacts()">
+    <span class="stat" id="contact-stat"></span>
+  </div>
+  <div class="flow-filter-bar" id="contacts-source-filter-bar"></div>
+  <div id="contact-table-wrap"></div>
 </div>
 
 <!-- KEY CONTACTS -->
@@ -3688,11 +3699,12 @@ function getAllRows() {
 
 // ── TAB SWITCHING ─────────────────────────────────────────────────────────
 function showTab(tab) {
-  ["dash","map","players","clients","nearby","enriched","appts","gcal","fillday","flow"].forEach(function(t) {
+  ["dash","map","contacts","players","clients","nearby","enriched","appts","gcal","fillday","flow"].forEach(function(t) {
     document.getElementById("pane-"+t).style.display=(t===tab)?"":"none";
     document.getElementById("btn-"+t).classList[(t===tab)?"add":"remove"]("active");
   });
   if(tab==="dash")     renderDash();
+  if(tab==="contacts") renderContacts();
   if(tab==="players")  renderPlayers();
   if(tab==="clients")  renderClients();
   if(tab==="enriched") renderEnriched();
@@ -4632,162 +4644,127 @@ function renderClients() {
 }
 
 // ── CONTACT TRACKER ───────────────────────────────────────────────────────
+// Normalizes the four separate contact stores (Key Contacts, Flow, Current
+// Clients, Leads) into one flat list for the unified Contacts tab. Each entry
+// keeps a reference to its original record + the right save function, so tag
+// toggling and click-through reuse the exact same mutation paths each source
+// already has — this view never writes anywhere new.
+function getAllContactsUnified(){
+  var list=[];
+  (customData.players||[]).forEach(function(p){
+    list.push({source:"player", sourceLabel:"Key Contact", id:p.id, name:p.name||"", company:p.company||"", phone:p.phone||"", email:p.email||"", city:"", statusLabel:p.title||"Key Contact", record:p, tagSaveFn:saveAll});
+  });
+  (outreachContacts||[]).forEach(function(c){
+    var stageInfo=FLOW_STAGES.find(function(s){ return s.key===c.stage; });
+    list.push({source:"flow", sourceLabel:"Flow", id:c.id, name:c.name||"", company:c.company||"", phone:c.phone||"", email:c.email||"", city:c.city||"", statusLabel:stageInfo?stageInfo.label:c.stage, record:c, tagSaveFn:saveOutreachFlow});
+  });
+  (customData.clientProps||[]).forEach(function(cp){
+    list.push({source:"client", sourceLabel:"Client", id:cp.key, name:cp.name||"", company:cp.company||"", phone:cp.phone||"", email:cp.email||"", city:cp.city||"", statusLabel:"Current Client", record:cp, tagSaveFn:saveAll});
+  });
+  var leadStageLabels={new:"New Lead",outreach:"Outreach Sent",appointed:"Appointed"};
+  (enrichedContacts||[]).forEach(function(c){
+    list.push({source:"lead", sourceLabel:"Lead", id:c.id, name:c.name||"", company:c.company||"", phone:c.phone||"", email:c.email||"", city:c.city||"", statusLabel:leadStageLabels[c.stage]||"New Lead", record:c, tagSaveFn:saveEnriched});
+  });
+  return list;
+}
+
+var _contactsSourceFilter="all";
+var CONTACTS_SOURCE_FILTERS=[
+  {key:"all",    label:"All"},
+  {key:"player", label:"Key Contacts"},
+  {key:"flow",   label:"Flow"},
+  {key:"client", label:"Clients"},
+  {key:"lead",   label:"Leads"}
+];
+var CONTACTS_SOURCE_COLORS={player:"#9b59b6",flow:"#378ADD",client:"#1D9E75",lead:"#f39c12"};
+
 function renderContacts() {
   if(!document.getElementById("contact-search")) return;
-  var q       = document.getElementById("contact-search").value.toLowerCase().trim();
-  var tagFilter = document.getElementById("contact-tag-filter").value;
-  var rows    = getAllRows();
+  var q=document.getElementById("contact-search").value.toLowerCase().trim();
+  var all=getAllContactsUnified();
 
-  var tracked = rows.filter(function(r){
-    var d=propData[pkey(r)]||{};
-    var tags=d.tags||[];
-    var hasActivity = tags.length||d.phone||d.email||d.manager||d.notes||d.status;
-    if(!hasActivity&&!tagFilter) return false;
-    var mq=!q||r[0].toLowerCase().includes(q)||(r[1]||"").toLowerCase().includes(q)||(r[2]||"").toLowerCase().includes(q);
-    var mt=!tagFilter||(tags.indexOf(tagFilter)>-1)||(d.status===tagFilter);
-    return mq&&mt;
+  var filterBar=document.getElementById("contacts-source-filter-bar");
+  if(filterBar){
+    filterBar.innerHTML="";
+    CONTACTS_SOURCE_FILTERS.forEach(function(f){
+      var p=document.createElement("button");
+      p.className="flow-filter-pill"+(_contactsSourceFilter===f.key?" active":"");
+      p.textContent=f.label;
+      p.onclick=function(){ _contactsSourceFilter=f.key; renderContacts(); };
+      filterBar.appendChild(p);
+    });
+  }
+
+  var filtered=all.filter(function(c){
+    if(_contactsSourceFilter!=="all"&&c.source!==_contactsSourceFilter) return false;
+    if(!q) return true;
+    return [c.name,c.company,c.phone,c.email,c.city].join(" ").toLowerCase().includes(q);
   });
 
-  // Sort by tag score descending (more tags / higher weight = top)
-  tracked.sort(function(a,b){
-    var da=propData[pkey(a)]||{}, db=propData[pkey(b)]||{};
-    var sa=getTagScore(da.tags||(da.status?[da.status]:[]));
-    var sb=getTagScore(db.tags||(db.status?[db.status]:[]));
-    return sb-sa;
-  });
+  var counts={player:0,flow:0,client:0,lead:0};
+  all.forEach(function(c){ counts[c.source]++; });
+  document.getElementById("contact-stat").textContent=
+    filtered.length+" of "+all.length+" contacts — "
+    +counts.player+" Key Contact"+(counts.player===1?"":"s")+" · "
+    +counts.flow+" Flow · "
+    +counts.client+" Client"+(counts.client===1?"":"s")+" · "
+    +counts.lead+" Lead"+(counts.lead===1?"":"s");
 
-  document.getElementById("contact-stat").textContent=tracked.length+" tracked properties";
   var wrap=document.getElementById("contact-table-wrap");
-
-  if(tracked.length===0){
-    wrap.innerHTML="<div class='empty-state'>No accounts tracked yet.<br>Expand any account card in the Accounts tab to add tags, contact info, or notes.</div>";
+  if(!filtered.length){
+    wrap.innerHTML="<div class='empty-state'>No contacts found.</div>";
     return;
   }
 
-  var grid=document.createElement("div"); grid.className="kp-grid";
+  var list=document.createElement("div");
+  filtered.forEach(function(c){
+    var card=document.createElement("div"); card.className="flow-card";
+    var left=document.createElement("div"); left.className="flow-card-left";
 
-  tracked.forEach(function(r, idx){
-    var k=pkey(r);
-    var d=propData[k]||{};
-    var tags=d.tags||(d.status?[d.status]:[]);
-    var score=getTagScore(tags);
-    var isClient=(customData.clientProps||[]).some(function(cp){ return cp.key===k; });
-    var color=isClient?"#1D9E75":score>=7?"#f39c12":KP_COLORS[idx%KP_COLORS.length];
+    var clickArea=document.createElement("div");
+    clickArea.style.cssText="cursor:pointer";
+    clickArea.title="Click to open";
+    clickArea.onclick=(function(item){ return function(){
+      if(item.source==="player") openEditPlayer(item.id);
+      else if(item.source==="flow") openFlowEditModal(item.id);
+      else if(item.source==="client") openClientEditModal(item.id);
+      else showTab("enriched");
+    }; })(c);
 
-    var card=document.createElement("div"); card.className="kp-card"+(isClient?" is-client":"");
+    var nameLine=document.createElement("div"); nameLine.className="flow-card-name";
+    nameLine.textContent=c.name||"(no name)";
+    var srcBadge=document.createElement("span"); srcBadge.className="flow-stage-pill";
+    srcBadge.style.cssText="margin-left:8px;background:"+CONTACTS_SOURCE_COLORS[c.source]+"22;color:"+CONTACTS_SOURCE_COLORS[c.source];
+    srcBadge.textContent=c.sourceLabel;
+    nameLine.appendChild(srcBadge);
+    var statusBadge=document.createElement("span"); statusBadge.className="flow-stage-pill flow-pill-call";
+    statusBadge.style.marginLeft="6px";
+    statusBadge.textContent=c.statusLabel;
+    nameLine.appendChild(statusBadge);
+    clickArea.appendChild(nameLine);
 
-    // Actions
-    var acts=document.createElement("div"); acts.className="kp-actions";
-    var mapBtn=document.createElement("button"); mapBtn.className="kp-action-btn"; mapBtn.title="View on map"; mapBtn.textContent="🗺";
-    mapBtn.onclick=function(){ showTab("map"); };
-    acts.appendChild(mapBtn);
-    card.appendChild(acts);
+    var sub=document.createElement("div"); sub.className="flow-card-sub";
+    var parts=[];
+    if(c.company) parts.push(c.company);
+    if(c.city) parts.push(c.city);
+    if(c.phone) parts.push(c.phone);
+    if(c.email) parts.push(c.email);
+    sub.textContent=parts.join(" · ")||"";
+    clickArea.appendChild(sub);
+    left.appendChild(clickArea);
 
-    // Top: avatar + name + badges
-    var top=document.createElement("div"); top.className="kp-card-top";
-    var av=document.createElement("div"); av.className="kp-avatar"; av.style.background=color;
-    av.textContent=getInitials(d.manager||r[0]);
-    var info=document.createElement("div"); info.className="kp-info";
-    var nm=document.createElement("div"); nm.className="kp-name"; nm.textContent=d.manager||r[0];
-    var co=document.createElement("div"); co.className="kp-company";
-    co.textContent=d.manager?(r[0]+(r[1]?" — "+r[1]:"")):(r[1]||"")+(r[2]?" · "+r[2]:"");
-    var badges=document.createElement("div"); badges.className="kp-badges";
-    if(isClient){ var cb=document.createElement("span"); cb.className="kp-badge kp-badge-client"; cb.textContent="✓ Client"; badges.appendChild(cb); }
-    tags.forEach(function(tk){
-      var t=TAGS.find(function(x){ return x.key===tk; }); if(!t) return;
-      var sp=document.createElement("span"); sp.className="kp-badge";
-      sp.style.cssText="background:"+t.color+"22;color:"+t.color; sp.textContent=t.label; badges.appendChild(sp);
-    });
-    info.appendChild(nm); info.appendChild(co);
-    if(badges.children.length) info.appendChild(badges);
-    top.className="kp-card-top clickable"; top.title="Click to open full card";
-    top.onclick=(function(row){ return function(e){
-      if(e.target.closest("button,input,a,select")) return;
-      openNearbyCardPanel(row);
-    }; })(r);
-    top.appendChild(av); top.appendChild(info);
-    card.appendChild(top);
+    var tagRow=buildTagRow(contactTagStore(c.record, c.tagSaveFn).tags, (function(item){ return function(tagKey){
+      toggleContactTag(item.record, tagKey, item.tagSaveFn);
+      renderContacts();
+    }; })(c));
+    tagRow.style.marginTop="6px";
+    left.appendChild(tagRow);
 
-    var hr=document.createElement("hr"); hr.className="kp-divider"; card.appendChild(hr);
-
-    // Editable fields (saves to propData)
-    var fields=document.createElement("div"); fields.className="kp-fields";
-    [{label:"Property Manager",key:"manager",ph:"Manager name...",full:false},
-     {label:"Phone",key:"phone",ph:"(801) 555-0000",full:false},
-     {label:"Email",key:"email",ph:"name@company.com",full:false},
-     {label:"Notes",key:"notes",ph:"Notes...",full:true}].forEach(function(fd){
-      var w=document.createElement("div"); w.className="kp-field"+(fd.full?" full":"");
-      var l=document.createElement("div"); l.className="kp-label"; l.textContent=fd.label;
-      var inp=document.createElement("input"); inp.type="text"; inp.className="kp-input"; inp.placeholder=fd.ph; inp.value=d[fd.key]||"";
-      var sv=document.createElement("div"); sv.className="kp-saved";
-      inp.oninput=(function(kk,fk,el,savedEl){ return function(){
-        if(!propData[kk]) propData[kk]={};
-        propData[kk][fk]=el.value;
-        saveAll(); savedEl.textContent="Saved ✓"; setTimeout(function(){ savedEl.textContent=""; },1400);
-      }; })(k,fd.key,inp,sv);
-      w.appendChild(l); w.appendChild(inp); w.appendChild(sv); fields.appendChild(w);
-    });
-    card.appendChild(fields);
-
-    // Tag pills
-    var srow=document.createElement("div"); srow.className="status-row"; srow.style.marginTop="8px";
-    TAGS.forEach(function(t){
-      var active=tags.indexOf(t.key)>-1;
-      var pill=document.createElement("button");
-      pill.className="spill"+(active?" active":"");
-      pill.style.cssText="border-color:"+t.color+";color:"+(active?"#fff":t.color)+(active?";background:"+t.color:"");
-      pill.textContent=t.label;
-      pill.onclick=(function(kk,tk){ return function(){
-        if(!propData[kk]) propData[kk]={}; var dd=propData[kk]; if(!dd.tags) dd.tags=[];
-        var i2=dd.tags.indexOf(tk);
-        if(i2>-1) dd.tags.splice(i2,1); else dd.tags.push(tk);
-        saveAll(); renderContacts();
-      }; })(k,t.key);
-      srow.appendChild(pill);
-    });
-    card.appendChild(srow);
-
-    // Property type tags
-    var ctLabel=document.createElement("div"); ctLabel.className="kp-label"; ctLabel.style.marginTop="6px"; ctLabel.textContent="Property Type";
-    card.appendChild(ctLabel);
-    var ctRow=buildTypeTagRow(getTypeTagsForKey(k), (function(kk){ return function(tagKey){
-      toggleTypeTagForKey(kk,tagKey); renderContacts();
-    }; })(k));
-    card.appendChild(ctRow);
-
-    // Last Walked date
-    (function(kk, dd){
-      var lwRow=document.createElement("div"); lwRow.style.cssText="display:flex;align-items:center;gap:8px;margin-top:8px";
-      var lwLabel=document.createElement("div"); lwLabel.className="kp-label"; lwLabel.style.cssText="flex-shrink:0;margin:0"; lwLabel.textContent="Last Walked";
-      var lwInp=document.createElement("input"); lwInp.type="date"; lwInp.className="kp-input"; lwInp.style.cssText="flex:1;font-size:12px";
-      lwInp.value=dd.lastWalked||"";
-      lwInp.onchange=function(){
-        if(!propData[kk]) propData[kk]={};
-        propData[kk].lastWalked=lwInp.value;
-        var matchingClient=(customData.clientProps||[]).find(function(cp){ return cp.key===kk; });
-        if(matchingClient) matchingClient.lastWalked=lwInp.value;
-        saveAll();
-      };
-      lwRow.appendChild(lwLabel); lwRow.appendChild(lwInp); card.appendChild(lwRow);
-    })(k, d);
-
-    // Address footer
-    var addr=[r[3]||d.address,r[2]].filter(Boolean).join(", ");
-    if(addr){ var foot=document.createElement("div"); foot.style.cssText="margin-top:8px;padding-top:8px;border-top:1px solid #f0f0f0;font-size:11px;color:#888"; foot.textContent="📍 "+addr; card.appendChild(foot); }
-
-    // Street View
-    (function(kk, dd, row){
-      var svAddr=dd.address||row[3]||"";
-      var svFull=svAddr?(svAddr+(/utah|,\s*ut\b|84\d{3}/i.test(svAddr)?"":", Utah")):"";
-      var svSec=buildStreetViewSection(svFull);
-      svSec.style.cssText="padding:6px 0 2px;border-top:"+(addr?"0":"1px solid #f0f0f0")+";margin-top:"+(addr?"6px":"8px");
-      card.appendChild(svSec);
-    })(k, d, r);
-
-    grid.appendChild(card);
+    card.appendChild(left);
+    list.appendChild(card);
   });
 
-  wrap.innerHTML=""; wrap.appendChild(grid);
+  wrap.innerHTML=""; wrap.appendChild(list);
 }
 
 // ── ADD CLIENT ────────────────────────────────────────────────────────────
