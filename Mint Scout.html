@@ -380,6 +380,7 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
 
   /* Larger tap targets for card buttons */
   .card-btn { padding: 4px 6px !important; font-size: 16px !important; }
+  .flow-icon-btn { padding:10px 12px !important; font-size:18px !important; min-width:40px; min-height:40px; }
 
   /* Contact tracker table scroll */
   #pane-contacts { overflow-x: auto; }
@@ -414,6 +415,8 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
 .flow-btn-decline  { background:#fdecea;color:#c0392b;border:1px solid #f5c6c6; }
 .flow-btn-nocontact { background:#f0f0f0;color:#666;border:1px solid #ddd; }
 .flow-btn-reset    { background:#f8f8f8;color:#888;border:1px solid #ddd; }
+.flow-icon-btn { background:none; border:none; cursor:pointer; padding:6px 8px; font-size:16px; line-height:1; border-radius:6px; }
+.flow-icon-btn:hover { background:#f5f5f5; }
 .flow-filter-bar { display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center; }
 .flow-filter-pill { padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1px solid #e0e0e0;background:#f8f8f8;color:#666;cursor:pointer;transition:all .15s; }
 .flow-filter-pill.active { background:#1a1a1a;color:#fff;border-color:#1a1a1a; }
@@ -5383,6 +5386,13 @@ function searchNearbyFromAppt(i){
   runNearbySearch();
 }
 
+// Google Calendar's LOCATION field often holds a video-call link instead of a
+// physical address (e.g. Zoom/Meet meetings) — those can never be geocoded, so
+// they're excluded from "Find Nearby" rather than always failing.
+function looksLikeVirtualMeeting(addr){
+  return /^https?:\/\//i.test(addr)||/\b(zoom\.us|meet\.google\.com|teams\.microsoft\.com|google meet|webex)\b/i.test(addr);
+}
+
 function renderNearbyAppts(){
   var wrap=document.getElementById("nearby-appts-section");
   if(!wrap) return;
@@ -5392,7 +5402,7 @@ function renderNearbyAppts(){
   var todayStr=today.toISOString().slice(0,10);
   var limitStr=new Date(today.getTime()+30*86400000).toISOString().slice(0,10);
   var allAppts=calAppts.concat(gcalEvents);
-  var upcoming=allAppts.filter(function(a){ return a.date>=todayStr&&a.date<=limitStr&&a.address; });
+  var upcoming=allAppts.filter(function(a){ return a.date>=todayStr&&a.date<=limitStr&&a.address&&!looksLikeVirtualMeeting(a.address); });
   upcoming.sort(function(a,b){ return (a.date+(a.time24||"")).localeCompare(b.date+(b.time24||"")); });
 
   if(!upcoming.length){
@@ -6015,20 +6025,43 @@ function geocodeSingle(addr,cb){
   }); // don't cache network failures
 }
 
-// Geocode an appointment address — appends ", Utah, USA" if no state present
+// Google Calendar locations are often "Venue Name, 123 Main St, City, UT 00000" —
+// Nominatim frequently returns zero results with the venue name attached, but
+// succeeds once it's stripped down to the address part. Detects that leading
+// segment (the first comma-part that isn't a "123 Main St"-style address) and
+// returns the address starting from there, or null if there's nothing to strip.
+function stripLeadingPlaceName(addr){
+  var parts=addr.split(",").map(function(s){ return s.trim(); });
+  var idx=parts.findIndex(function(p){ return /^\d+\s/.test(p); });
+  if(idx>0) return parts.slice(idx).join(", ");
+  return null;
+}
+
+// Geocode an appointment address, trying progressively more permissive variants:
+// as-is, with ", Utah, USA" appended if no state is present, and with any leading
+// venue/place name stripped off (see stripLeadingPlaceName) — since Google
+// Calendar's LOCATION field commonly includes one and it trips up Nominatim.
 function geocodeApptAddress(rawAddr, cb){
   if(!rawAddr){ cb(null); return; }
   var addr=rawAddr.trim();
-  // Already has Utah / UT / zip code
   var hasState=/\b(utah|,\s*ut\b|84\d{3})\b/i.test(addr);
-  if(hasState){ geocodeSingle(addr, cb); return; }
-  // Try with Utah context first
-  var withUT=addr+", Utah, USA";
-  if(geoCache[withUT]){ geoCache[rawAddr]=geoCache[withUT]; cb(geoCache[withUT]); return; }
-  geocodeSingle(withUT,function(geo){
-    if(geo){ geoCache[rawAddr]=geo; saveGeoCache(); cb(geo); }
-    else { geocodeSingle(addr, cb); } // fallback: try as-is
-  });
+  var candidates=hasState?[addr]:[addr+", Utah, USA",addr];
+  var stripped=stripLeadingPlaceName(addr);
+  if(stripped){
+    var strippedHasState=/\b(utah|,\s*ut\b|84\d{3})\b/i.test(stripped);
+    candidates.push(strippedHasState?stripped:stripped+", Utah, USA");
+  }
+  var i=0;
+  function tryNext(){
+    if(i>=candidates.length){ cb(null); return; }
+    var candidate=candidates[i++];
+    if(geoCache[candidate]){ geoCache[rawAddr]=geoCache[candidate]; cb(geoCache[candidate]); return; }
+    geocodeSingle(candidate,function(geo){
+      if(geo){ geoCache[rawAddr]=geo; saveGeoCache(); cb(geo); }
+      else { tryNext(); }
+    });
+  }
+  tryNext();
 }
 
 var _nearbyActive=false;
@@ -6099,7 +6132,7 @@ function runNearbySearch(){
   document.getElementById("nearby-map-wrap").style.display="none";
   if(_nearbyMap){ _nearbyMap.remove(); _nearbyMap=null; }
 
-  geocodeSingle(addr,function(origin){
+  geocodeApptAddress(addr,function(origin){
     if(!origin){
       prog.textContent="Address not found. Try adding \", Utah\" or a zip code.";
       return;
@@ -6271,7 +6304,11 @@ function renderNearbyResults(origin,radius,rows){
   var tbl=document.createElement("table"); tbl.className="client-table nearby-results-tbl";
   var allChk=document.createElement("input"); allChk.type="checkbox"; allChk.className="nearby-chk"; allChk.title="Select all";
   allChk.onchange=function(){ document.querySelectorAll(".nearby-row-chk").forEach(function(c){ c.checked=allChk.checked; }); };
-  var thChk=document.createElement("th"); thChk.appendChild(allChk);
+  var allChkLabel=document.createElement("label");
+  allChkLabel.style.cssText="display:inline-flex;align-items:center;justify-content:center;padding:6px;cursor:pointer;";
+  allChkLabel.title="Select all";
+  allChkLabel.appendChild(allChk);
+  var thChk=document.createElement("th"); thChk.appendChild(allChkLabel);
   var thead=document.createElement("thead"); var headTr=document.createElement("tr");
   [thChk,"Dist","Property","Company","City","Address","Manager","Phone","Email","Tags",""].forEach(function(h){
     var th=typeof h==="string"?document.createElement("th"):h;
@@ -8711,15 +8748,15 @@ function emailFromFlowModal(){
 // Builds a subject/body for a Flow contact, referencing the appointment it was
 // added from (if any) so outreach emails read naturally instead of generic/cold.
 function buildFlowEmail(c){
-  var apptDateFmt=c.flowGroupDate?formatApptDate(c.flowGroupDate):"";
+  var dayName=c.flowGroupDate?weekdayName(c.flowGroupDate):"";
   var contextLine=c.apptSummary
-    ?("I'll be near "+c.apptSummary+(c.apptAddress?" ("+c.apptAddress+")":"")+(apptDateFmt?" on "+apptDateFmt:"")+", and wanted to reach out.\n\n")
+    ?("I'm going to be in the area"+(dayName?" this "+dayName:"")+" (near "+c.apptSummary+(c.apptAddress?", "+c.apptAddress:"")+") and wanted to reach out about professional window cleaning"+(c.company?" for "+c.company:"")+".\n\n")
     :"";
-  var forCompany=c.company?(" at "+c.company):"";
-  var subject="Window Cleaning"+(c.company?(" for "+c.company):"")+(c.apptSummary?(" – "+c.apptSummary):"");
-  var body="Hi "+(c.name||"there")+",\n\n"
+  var forCompany=c.company?(" for "+c.company):"";
+  var subject="Window Cleaning"+(c.company?(" – "+c.company):"");
+  var body="Hey "+(c.name||"there")+",\n\n"
     +contextLine
-    +"I wanted to reach out about professional window cleaning services"+forCompany+".\n\n"
+    +(c.apptSummary?"":"I wanted to reach out about professional window cleaning"+forCompany+".\n\n")
     +"Would you be open to a quick call or a free estimate?\n\n"
     +"Thanks,\nMiNT Window Cleaning";
   return {subject:subject,body:body};
@@ -8890,7 +8927,8 @@ function renderFlowTab(){
     var actions=document.createElement("div"); actions.className="flow-card-actions";
 
     var emailBtn=document.createElement("button");
-    emailBtn.style.cssText="background:none;border:none;color:"+(c.email?"#378ADD":"#ddd")+";font-size:16px;cursor:pointer;padding:0 4px;line-height:1";
+    emailBtn.className="flow-icon-btn";
+    emailBtn.style.color=c.email?"#378ADD":"#ddd";
     emailBtn.textContent="✉";
     emailBtn.title=c.email?"Email "+c.name+" via Gmail":"No email on file — click to add one";
     emailBtn.onclick=(function(id){ return function(){ emailFlowContact(id); }; })(c.id);
@@ -8929,7 +8967,8 @@ function renderFlowTab(){
     }
 
     var del=document.createElement("button");
-    del.style.cssText="background:none;border:none;color:#ddd;font-size:16px;cursor:pointer;padding:0 4px;margin-left:4px;line-height:1";
+    del.className="flow-icon-btn";
+    del.style.color="#ddd";
     del.textContent="🗑";
     del.title="Remove from flow";
     del.onclick=(function(id){ return function(){ if(confirm("Remove this contact from the flow?")) removeFromFlow(id); }; })(c.id);
