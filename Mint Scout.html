@@ -3670,6 +3670,20 @@ function playerPropertyKeys(p){
   return [];
 }
 
+// Pushes a Contact's name/phone/email onto every property card it's linked
+// to, so linking (or editing) a Contact updates those property cards too —
+// mirrors what the star button already does in the other direction. Never
+// clears a field (only writes truthy values), so unlinking a property later
+// doesn't wipe out its manager info.
+function syncPlayerToLinkedProperties(player){
+  playerPropertyKeys(player).forEach(function(key){
+    if(!propData[key]) propData[key]={};
+    if(player.name)  propData[key].manager=player.name;
+    if(player.phone) propData[key].phone=player.phone;
+    if(player.email) propData[key].email=player.email;
+  });
+}
+
 // Finds (or lazily creates) a real, id-bearing record for a property management
 // company, seeded from the legacy name-keyed customData.companyInfo the first
 // time it's touched, so existing website/notes data isn't lost.
@@ -4366,6 +4380,7 @@ function submitAddPlayer() {
     return (p.name||"").trim().toLowerCase()===name.toLowerCase()
       && (p.company||"").trim().toLowerCase()===company.toLowerCase();
   });
+  var savedPlayer;
   if(existing){
     if(title) existing.title=title;
     if(phone) existing.phone=phone;
@@ -4373,8 +4388,9 @@ function submitAddPlayer() {
     var existingKeys=playerPropertyKeys(existing);
     _kpEditingPropertyKeys.forEach(function(k){ if(existingKeys.indexOf(k)===-1) existingKeys.push(k); });
     existing.propertyKeys=existingKeys;
+    savedPlayer=existing;
   } else {
-    customData.players.push({
+    savedPlayer={
       id: Date.now()+"",
       name: name,
       company: company,
@@ -4385,8 +4401,10 @@ function submitAddPlayer() {
       status: "",
       isClient: false,
       propertyKeys: _kpEditingPropertyKeys.slice()
-    });
+    };
+    customData.players.push(savedPlayer);
   }
+  syncPlayerToLinkedProperties(savedPlayer);
   saveAll(); closeModal("addPlayer"); renderPlayers();
 }
 
@@ -4543,7 +4561,12 @@ function openEditPlayer(pid) {
     var name=document.getElementById("kp-new-name").value.trim(); if(!name){ alert("Name required."); return; }
     var company=resolveCompany("kp-new-company","kp-new-company-input"); if(company===null) return;
     customData.players.forEach(function(p){
-      if(p.id===pid){ p.name=name; p.company=company; p.title=document.getElementById("kp-new-title").value.trim(); p.phone=document.getElementById("kp-new-phone").value.trim(); p.email=document.getElementById("kp-new-email").value.trim(); p.propertyKeys=_kpEditingPropertyKeys.slice(); }
+      if(p.id===pid){
+        p.name=name; p.company=company; p.title=document.getElementById("kp-new-title").value.trim();
+        p.phone=document.getElementById("kp-new-phone").value.trim(); p.email=document.getElementById("kp-new-email").value.trim();
+        p.propertyKeys=_kpEditingPropertyKeys.slice();
+        syncPlayerToLinkedProperties(p);
+      }
     });
     saveAll(); closeModal("addPlayer");
     document.querySelector("#modal-addPlayer .btn-gold").onclick=submitAddPlayer;
