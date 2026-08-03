@@ -561,7 +561,14 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
       <select class="modal-input" id="kp-new-company"></select>
     </div>
     <div class="modal-field" id="kp-new-company-wrap" style="display:none"><div class="modal-label">New Company Name</div><input class="modal-input" id="kp-new-company-input" type="text" placeholder="Company name..."></div>
-    <div class="modal-field"><div class="modal-label">Title / Role</div><input class="modal-input" id="kp-new-title" type="text" placeholder="e.g. Property Manager, Facilities Director..."></div>
+    <div class="modal-field"><div class="modal-label">Title / Role</div><input class="modal-input" id="kp-new-title" type="text" list="kp-role-options" placeholder="e.g. Property Manager, Facilities Director...">
+      <datalist id="kp-role-options">
+        <option value="Property Manager">
+        <option value="Regional Manager">
+        <option value="Facility Manager">
+        <option value="Other">
+      </datalist>
+    </div>
     <div class="modal-field"><div class="modal-label">Phone</div><input class="modal-input" id="kp-new-phone" type="text" placeholder="(801) 555-0000"></div>
     <div class="modal-field"><div class="modal-label">Email</div><input class="modal-input" id="kp-new-email" type="text" placeholder="name@company.com"></div>
     <div class="modal-actions">
@@ -2669,7 +2676,11 @@ function buildTagRow(currentTags, onToggle){
 // read. Otherwise tags live locally on the record itself (contacts with no
 // matching property: manual Flow adds, Apollo/Apify leads).
 function contactTagStore(record, localSaveFn){
+  // A contact linked to exactly one property still shares that property's tags
+  // (unchanged behavior). One linked to several — or none — has no single
+  // property to share with, so its tags live locally on the contact itself.
   var sharedKey=record.sourceKey||record.key||"";
+  if(!sharedKey&&record.propertyKeys&&record.propertyKeys.length===1) sharedKey=record.propertyKeys[0];
   if(sharedKey){
     if(!propData[sharedKey]) propData[sharedKey]={};
     if(!propData[sharedKey].tags) propData[sharedKey].tags=[];
@@ -3410,7 +3421,7 @@ var PROP_EMAILS = {
 
 var propData    = {};
 var clientData  = {};
-var customData  = { properties:[], companies:[], deletedProps:[], overrides:{}, players:[], companyInfo:{}, clientProps:[] };
+var customData  = { properties:[], companies:[], deletedProps:[], overrides:{}, players:[], companyInfo:{}, clientProps:[], companyRegistry:[] };
 var reassignTarget = null;
 
 // ── STORAGE ───────────────────────────────────────────────────────────────
@@ -3507,7 +3518,7 @@ function loadAll() {
       if(!propData[k].email) propData[k].email=PROP_EMAILS[k];
     });
     if(c) clientData = JSON.parse(c);
-    if(x) { var parsed=JSON.parse(x); customData=Object.assign({properties:[],companies:[],deletedProps:[],overrides:{},players:[],companyInfo:{},clientProps:[]},parsed); }
+    if(x) { var parsed=JSON.parse(x); customData=Object.assign({properties:[],companies:[],deletedProps:[],overrides:{},players:[],companyInfo:{},clientProps:[],companyRegistry:[]},parsed); }
   } catch(e) {}
   // Pre-load default clients if clientProps is empty (first run)
   if (!customData.clientProps || customData.clientProps.length === 0) {
@@ -3639,6 +3650,29 @@ function loadAll() {
 }
 function pkey(r) { return r[0]+"|"+(r[1]||"")+"|"+(r[2]||""); }
 
+// A Key Contact (customData.players entry) can now oversee multiple properties.
+// New/edited contacts store propertyKeys (array); older ones only have a single
+// sourceKey — read through this helper so both shapes work everywhere.
+function playerPropertyKeys(p){
+  if(p.propertyKeys && p.propertyKeys.length) return p.propertyKeys;
+  if(p.sourceKey) return [p.sourceKey];
+  return [];
+}
+
+// Finds (or lazily creates) a real, id-bearing record for a property management
+// company, seeded from the legacy name-keyed customData.companyInfo the first
+// time it's touched, so existing website/notes data isn't lost.
+function getCompanyRecord(name){
+  if(!name) return null;
+  if(!customData.companyRegistry) customData.companyRegistry=[];
+  var rec=customData.companyRegistry.find(function(c){ return c.name===name; });
+  if(rec) return rec;
+  var legacy=(customData.companyInfo&&customData.companyInfo[name])||{};
+  rec={id:"co_"+Date.now()+"_"+Math.random().toString(36).slice(2), name:name, phone:"", address:"", website:legacy.website||"", notes:legacy.notes||""};
+  customData.companyRegistry.push(rec);
+  return rec;
+}
+
 function getAllRows() {
   var deleted=customData.deletedProps||[], ov=customData.overrides||{};
   var rows=ALL.filter(function(r){ return deleted.indexOf(pkey(r))===-1; }).map(function(r){ var k=pkey(r); return ov[k]?[r[0],ov[k],r[2]]:r; });
@@ -3754,26 +3788,29 @@ function buildCard(r) {
     nm.appendChild(daysBadge);
   }
   // Check if this property's manager/contact matches a key player
-  var kpNames = (customData.players||[]).filter(function(p){ return p.company===r[1]; }).map(function(p){ return p.name.toLowerCase(); });
-  var isKP = kpNames.length > 0 && (kpNames.some(function(kpn){
-    return (d.manager||"").toLowerCase().includes(kpn);
-  }));
+  var isKP = (customData.players||[]).some(function(p){
+    if(playerPropertyKeys(p).indexOf(k)>-1) return true;
+    return p.company===r[1] && (d.manager||"").toLowerCase().includes((p.name||"").toLowerCase());
+  });
   if(r[3]||r[2]||isKP){
     var cy=document.createElement("div"); cy.className="card-city";
     cy.textContent=(isKP?"⭐ ":"")+(r[3]||r[2]||"");
     left.appendChild(cy);
   }
   var chev=document.createElement("span"); chev.className="card-chevron"; chev.textContent="▾";
-  // Star button — promotes property manager to Key Players
+  // Star button — links this property's manager to a Key Contact. If the same
+  // person is already a Key Contact (matched by name+company, since one person
+  // can oversee multiple properties), this property gets added to their
+  // existing propertyKeys instead of creating a duplicate contact.
   var isStarred = (customData.players||[]).some(function(p){
-    return p.sourceKey === k;
+    return playerPropertyKeys(p).indexOf(k)>-1;
   });
-  var star=document.createElement("button"); star.className="card-btn card-star"+(isStarred?" starred":""); star.title=isStarred?"Already in Key Players":"Add property manager to Key Players"; star.textContent="\u2605";
+  var star=document.createElement("button"); star.className="card-btn card-star"+(isStarred?" starred":""); star.title=isStarred?"Already linked to a Key Contact":"Link property manager to Key Contacts"; star.textContent="\u2605";
   star.onclick=function(e){
     e.stopPropagation();
-    var alreadyExists=(customData.players||[]).some(function(p){ return p.sourceKey===k; });
-    if(alreadyExists){
-      alert("This property\'s manager is already in Key Players.");
+    var alreadyLinked=(customData.players||[]).some(function(p){ return playerPropertyKeys(p).indexOf(k)>-1; });
+    if(alreadyLinked){
+      alert("This property is already linked to a Key Contact.");
       return;
     }
     var d=propData[k]||{};
@@ -3786,23 +3823,33 @@ function buildCard(r) {
       alert("Please fill in the Property Manager name first, then click \u2605 again.");
       return;
     }
-    var newPlayer={
-      id: Date.now()+"",
-      name: managerName,
-      company: r[1]||"",
-      title: "Property Manager",
-      phone: d.phone||"",
-      email: "",
-      notes: "From: "+r[0]+(r[2]?" ("+r[2]+")":""),
-      status: d.status||"",
-      isClient: false,
-      sourceKey: k
-    };
     if(!customData.players) customData.players=[];
-    customData.players.push(newPlayer);
+    var existing=customData.players.find(function(p){
+      return (p.name||"").trim().toLowerCase()===managerName.trim().toLowerCase()
+        && (p.company||"").trim().toLowerCase()===(r[1]||"").trim().toLowerCase();
+    });
+    if(existing){
+      var keys=playerPropertyKeys(existing);
+      if(keys.indexOf(k)===-1) keys.push(k);
+      existing.propertyKeys=keys;
+      existing.notes=(existing.notes?existing.notes+"\n":"")+"Also manages: "+r[0]+(r[2]?" ("+r[2]+")":"");
+    } else {
+      customData.players.push({
+        id: Date.now()+"",
+        name: managerName,
+        company: r[1]||"",
+        title: "Property Manager",
+        phone: d.phone||"",
+        email: "",
+        notes: "From: "+r[0]+(r[2]?" ("+r[2]+")":""),
+        status: d.status||"",
+        isClient: false,
+        propertyKeys: [k]
+      });
+    }
     saveAll();
     star.classList.add("starred");
-    star.title="Already in Key Players";
+    star.title="Already linked to a Key Contact";
     // Flash confirmation
     star.style.transform="scale(1.4)";
     setTimeout(function(){ star.style.transform=""; },300);
@@ -3999,8 +4046,9 @@ function renderMap() {
     }; })(co, infoBtn);
     hdr.appendChild(hl); hdr.appendChild(infoBtn); hdr.appendChild(addBtn);
 
-    // Company info panel
-    var coData = (customData.companyInfo && customData.companyInfo[co]) || {};
+    // Company info panel — backed by the id-bearing companyRegistry record
+    // (lazily created/migrated from the old companyInfo map by getCompanyRecord)
+    var coRec = getCompanyRecord(co) || {};
     var safeCoId = "coinfo-"+co.replace(/[^a-z0-9]/gi,"_");
     var infoPanel = document.createElement("div"); infoPanel.className="co-info"; infoPanel.id=safeCoId;
 
@@ -4011,35 +4059,32 @@ function renderMap() {
     statRow.appendChild(statLbl); statRow.appendChild(statVal);
     infoPanel.appendChild(statRow);
 
-    // Website
-    var webRow=document.createElement("div"); webRow.className="co-info-row";
-    var webLbl=document.createElement("div"); webLbl.className="co-info-label"; webLbl.textContent="Website";
-    var webInp=document.createElement("input"); webInp.type="text"; webInp.className="co-info-input"; webInp.placeholder="https://..."; webInp.value=coData.website||"";
-    var webSv=document.createElement("div"); webSv.className="co-info-saved";
-    if(coData.website){ var wlink=document.createElement("a"); wlink.className="co-info-link"; wlink.href=coData.website; wlink.target="_blank"; wlink.textContent=coData.website; webRow.appendChild(webLbl); webRow.appendChild(wlink); }
-    else { webRow.appendChild(webLbl); }
-    webRow.appendChild(webInp); webRow.appendChild(webSv);
-    webInp.oninput=(function(coName,el,sv){ return function(){
-      if(!customData.companyInfo) customData.companyInfo={};
-      if(!customData.companyInfo[coName]) customData.companyInfo[coName]={};
-      customData.companyInfo[coName].website=el.value; saveAll();
-      sv.textContent="Saved ✓"; setTimeout(function(){ sv.textContent=""; },1400);
-    }; })(co,webInp,webSv);
-    infoPanel.appendChild(webRow);
-
-    // Notes
-    var notesRow=document.createElement("div"); notesRow.className="co-info-row";
-    var notesLbl=document.createElement("div"); notesLbl.className="co-info-label"; notesLbl.textContent="Notes";
-    var notesInp=document.createElement("textarea"); notesInp.className="co-info-input"; notesInp.rows=3; notesInp.placeholder="Notes about this company..."; notesInp.value=coData.notes||"";
-    var notesSv=document.createElement("div"); notesSv.className="co-info-saved";
-    notesInp.oninput=(function(coName,el,sv){ return function(){
-      if(!customData.companyInfo) customData.companyInfo={};
-      if(!customData.companyInfo[coName]) customData.companyInfo[coName]={};
-      customData.companyInfo[coName].notes=el.value; saveAll();
-      sv.textContent="Saved ✓"; setTimeout(function(){ sv.textContent=""; },1400);
-    }; })(co,notesInp,notesSv);
-    notesRow.appendChild(notesLbl); notesRow.appendChild(notesInp); notesRow.appendChild(notesSv);
-    infoPanel.appendChild(notesRow);
+    // Phone / Address / Website / Notes — each saves directly onto the
+    // companyRegistry record for this company name.
+    [
+      {key:"phone",   label:"Phone",   tag:"input", ph:"(801) 555-0000"},
+      {key:"address", label:"Address", tag:"input", ph:"Company address..."},
+      {key:"website", label:"Website", tag:"input", ph:"https://..."},
+      {key:"notes",   label:"Notes",   tag:"textarea", ph:"Notes about this company..."}
+    ].forEach(function(fd){
+      var row=document.createElement("div"); row.className="co-info-row";
+      var lbl=document.createElement("div"); lbl.className="co-info-label"; lbl.textContent=fd.label;
+      var inp=document.createElement(fd.tag); inp.className="co-info-input"; inp.placeholder=fd.ph; inp.value=coRec[fd.key]||"";
+      if(fd.tag==="textarea") inp.rows=3;
+      var sv=document.createElement("div"); sv.className="co-info-saved";
+      if(fd.key==="website"&&coRec.website){
+        var wlink=document.createElement("a"); wlink.className="co-info-link"; wlink.href=coRec.website; wlink.target="_blank"; wlink.textContent=coRec.website;
+        row.appendChild(lbl); row.appendChild(wlink);
+      } else {
+        row.appendChild(lbl);
+      }
+      row.appendChild(inp); row.appendChild(sv);
+      inp.oninput=(function(rec,fkey,el,savedEl){ return function(){
+        rec[fkey]=el.value; saveAll();
+        savedEl.textContent="Saved ✓"; setTimeout(function(){ savedEl.textContent=""; },1400);
+      }; })(coRec,fd.key,inp,sv);
+      infoPanel.appendChild(row);
+    });
 
     var body=document.createElement("div"); body.className="col-body";
     props.forEach(function(r){ body.appendChild(buildCard(r)); });
@@ -4081,6 +4126,7 @@ function resolveCompany(selId, inputId) {
   if(sel==="__new__"){
     if(!inp){ alert("Please enter a company name."); return null; }
     if(!customData.companies.includes(inp)) customData.companies.push(inp);
+    getCompanyRecord(inp);
     return inp;
   }
   return sel||"";
@@ -4226,18 +4272,35 @@ function getInitials(name) {
 function submitAddPlayer() {
   var name=document.getElementById("kp-new-name").value.trim(); if(!name){ alert("Name is required."); return; }
   var company=resolveCompany("kp-new-company","kp-new-company-input"); if(company===null) return;
-  var player = {
-    id: Date.now()+"",
-    name: name,
-    company: company,
-    title: document.getElementById("kp-new-title").value.trim(),
-    phone: document.getElementById("kp-new-phone").value.trim(),
-    email: document.getElementById("kp-new-email").value.trim(),
-    notes: "",
-    status: "",
-    isClient: false
-  };
-  customData.players.push(player); saveAll(); closeModal("addPlayer"); renderPlayers();
+  var title=document.getElementById("kp-new-title").value.trim();
+  var phone=document.getElementById("kp-new-phone").value.trim();
+  var email=document.getElementById("kp-new-email").value.trim();
+  if(!customData.players) customData.players=[];
+  // Dedup by name+company — a person already tracked (e.g. starred from a
+  // property card) gets updated in place instead of becoming a duplicate.
+  var existing=customData.players.find(function(p){
+    return (p.name||"").trim().toLowerCase()===name.toLowerCase()
+      && (p.company||"").trim().toLowerCase()===company.toLowerCase();
+  });
+  if(existing){
+    if(title) existing.title=title;
+    if(phone) existing.phone=phone;
+    if(email) existing.email=email;
+  } else {
+    customData.players.push({
+      id: Date.now()+"",
+      name: name,
+      company: company,
+      title: title,
+      phone: phone,
+      email: email,
+      notes: "",
+      status: "",
+      isClient: false,
+      propertyKeys: []
+    });
+  }
+  saveAll(); closeModal("addPlayer"); renderPlayers();
 }
 
 function renderPlayers() {
@@ -4298,6 +4361,17 @@ function renderPlayers() {
       }
     }
     if(player.status){ var sb=document.createElement("span"); sb.className="kp-badge kp-badge-status"; sb.style.background=STATUS_COLORS[player.status]||"#888"; sb.textContent=STATUS_LABELS[player.status]; badges.appendChild(sb); }
+    var propKeys=playerPropertyKeys(player);
+    if(propKeys.length>1){
+      var pb=document.createElement("span"); pb.className="kp-badge"; pb.style.cssText="background:#eef2ff;color:#4f46e5;cursor:pointer";
+      pb.textContent="🏢 Manages "+propKeys.length+" properties";
+      pb.title="Click to see which properties";
+      pb.onclick=(function(name,keys){ return function(e){
+        e.stopPropagation();
+        alert(name+" manages:\n\n"+keys.map(function(pk){ return pk.split("|")[0]; }).join("\n"));
+      }; })(player.name,propKeys);
+      badges.appendChild(pb);
+    }
     info.appendChild(nm); info.appendChild(co); info.appendChild(badges);
     top.className="kp-card-top clickable"; top.title="Click to edit";
     top.onclick=(function(pid){ return function(e){
