@@ -384,9 +384,6 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
   .card-btn { padding: 4px 6px !important; font-size: 16px !important; }
   .flow-icon-btn { padding:10px 12px !important; font-size:18px !important; min-width:40px; min-height:40px; }
   .flow-icon-btn-email { font-size:24px !important; min-width:46px; min-height:46px; }
-
-  /* Contact tracker table scroll */
-  #pane-contacts { overflow-x: auto; }
 }
 
 @media (max-width: 480px) {
@@ -454,7 +451,8 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
 <div class="tabs">
   <button class="tab-btn" id="btn-dash"     onclick="showTab('dash')">📊 Dashboard</button>
   <button class="tab-btn active" id="btn-map" onclick="showTab('map')">🗺 Properties</button>
-  <button class="tab-btn" id="btn-contacts" onclick="showTab('contacts')">👥 Contacts</button>
+  <button class="tab-btn" id="btn-players"  onclick="showTab('players')">👥 Contacts</button>
+  <button class="tab-btn" id="btn-clients"  onclick="showTab('clients')">✅ Current Clients</button>
   <button class="tab-btn" id="btn-nearby"   onclick="showTab('nearby')">📍 Nearby</button>
   <button class="tab-btn" id="btn-enriched" onclick="showTab('enriched')">✨ Leads</button>
   <button class="tab-btn" id="btn-appts"    onclick="showTab('appts')">📅 Appointments</button>
@@ -497,48 +495,34 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
   <div class="board" id="board"></div>
 </div>
 
-<!-- UNIFIED CONTACTS -->
-<div id="pane-contacts" style="display:none">
-  <div class="flow-filter-bar" id="contacts-subtab-bar">
-    <button class="flow-filter-pill active" id="csub-btn-all"     onclick="showContactsSubTab('all')">All Contacts</button>
-    <button class="flow-filter-pill" id="csub-btn-players" onclick="showContactsSubTab('players')">⭐ Key Contacts</button>
-    <button class="flow-filter-pill" id="csub-btn-clients" onclick="showContactsSubTab('clients')">✅ Current Clients</button>
+<!-- CONTACTS (people: Property Manager / Regional Manager / Facility Manager —
+     each will link to the properties they oversee, kept separate from
+     property/account records) -->
+<div id="pane-players" style="display:none">
+  <div class="toolbar">
+    <input type="text" id="player-search" placeholder="Search by name, company, phone, email..." oninput="renderPlayers()">
+    <select id="player-status-filter" onchange="renderPlayers()">
+      <option value="">All</option>
+      <option value="client">Current Clients Only</option>
+      <option value="interested">Interested</option>
+      <option value="follow-up">Follow Up</option>
+      <option value="contacted">Contacted</option>
+      <option value="not-interested">Not Interested</option>
+    </select>
+    <button class="btn btn-gold" onclick="openModal('addPlayer')">+ Add Key Contact</button>
+    <span class="stat" id="player-stat"></span>
   </div>
+  <div id="player-grid" class="kp-grid"></div>
+</div>
 
-  <div id="contacts-sub-all">
-    <div class="toolbar">
-      <input type="text" id="contact-search" placeholder="Search by name, company, phone, email, city..." oninput="renderContacts()">
-      <span class="stat" id="contact-stat"></span>
-    </div>
-    <div class="flow-filter-bar" id="contacts-source-filter-bar"></div>
-    <div id="contact-table-wrap"></div>
+<!-- CURRENT CLIENTS (property/account records, not people) -->
+<div id="pane-clients" style="display:none">
+  <div class="toolbar">
+    <input type="text" id="client-search" placeholder="Search clients, companies, cities..." oninput="renderClients()">
+    <button class="btn btn-green" onclick="openAddClientModal()">+ Add Client</button>
+    <span class="stat" id="client-stat"></span>
   </div>
-
-  <div id="contacts-sub-players" style="display:none">
-    <div class="toolbar">
-      <input type="text" id="player-search" placeholder="Search by name, company, phone, email..." oninput="renderPlayers()">
-      <select id="player-status-filter" onchange="renderPlayers()">
-        <option value="">All</option>
-        <option value="client">Current Clients Only</option>
-        <option value="interested">Interested</option>
-        <option value="follow-up">Follow Up</option>
-        <option value="contacted">Contacted</option>
-        <option value="not-interested">Not Interested</option>
-      </select>
-      <button class="btn btn-gold" onclick="openModal('addPlayer')">+ Add Key Contact</button>
-      <span class="stat" id="player-stat"></span>
-    </div>
-    <div id="player-grid" class="kp-grid"></div>
-  </div>
-
-  <div id="contacts-sub-clients" style="display:none">
-    <div class="toolbar">
-      <input type="text" id="client-search" placeholder="Search clients, companies, cities..." oninput="renderClients()">
-      <button class="btn btn-green" onclick="openAddClientModal()">+ Add Client</button>
-      <span class="stat" id="client-stat"></span>
-    </div>
-    <div id="client-grid"></div>
-  </div>
+  <div id="client-grid"></div>
 </div>
 
 <!-- ADD PROPERTY MODAL -->
@@ -2773,7 +2757,7 @@ function saveNewTypeTag(){
   closeModal("newTypeTag");
   if(_nttCallback) { _nttCallback(key); _nttCallback=null; }
   // Re-render wherever we are
-  renderClients(); renderContacts(); renderPlayers();
+  renderClients(); renderPlayers();
 }
 
 function openManageTypeTagsModal(){
@@ -2787,7 +2771,7 @@ function openManageTypeTagsModal(){
     delBtn.onclick=function(){
       if(!confirm('Remove tag "'+t.label+'"?')) return;
       customData.typeTagDefs.splice(i,1); saveAll(); openManageTypeTagsModal();
-      renderClients(); renderContacts();
+      renderClients();
     };
     row.appendChild(dot); row.appendChild(nameInp); row.appendChild(delBtn);
     list.appendChild(row);
@@ -3702,34 +3686,19 @@ function getAllRows() {
 }
 
 // ── TAB SWITCHING ─────────────────────────────────────────────────────────
-var _contactsSubTab="all";
-
 function showTab(tab) {
-  ["dash","map","contacts","nearby","enriched","appts","gcal","fillday","flow"].forEach(function(t) {
+  ["dash","map","players","clients","nearby","enriched","appts","gcal","fillday","flow"].forEach(function(t) {
     document.getElementById("pane-"+t).style.display=(t===tab)?"":"none";
     document.getElementById("btn-"+t).classList[(t===tab)?"add":"remove"]("active");
   });
   if(tab==="dash")     renderDash();
-  if(tab==="contacts") showContactsSubTab(_contactsSubTab);
+  if(tab==="players")  renderPlayers();
+  if(tab==="clients")  renderClients();
   if(tab==="enriched") renderEnriched();
   if(tab==="nearby")   renderNearbyAppts();
   if(tab==="appts")    { renderCalAppts(); syncGoogleCalendar(true); }
   if(tab==="fillday")  renderFillMyDay();
   if(tab==="flow")     renderFlowTab();
-}
-
-// Key Contacts and Current Clients live inside the Contacts tab as sub-views
-// rather than separate top-level tabs — same panes/render functions as
-// before (renderPlayers()/renderClients()), just relocated.
-function showContactsSubTab(sub){
-  _contactsSubTab=sub;
-  ["all","players","clients"].forEach(function(s){
-    document.getElementById("contacts-sub-"+s).style.display=(s===sub)?"":"none";
-    document.getElementById("csub-btn-"+s).classList[(s===sub)?"add":"remove"]("active");
-  });
-  if(sub==="all")     renderContacts();
-  if(sub==="players") renderPlayers();
-  if(sub==="clients") renderClients();
 }
 
 // ── CITIES ────────────────────────────────────────────────────────────────
@@ -4659,130 +4628,6 @@ function renderClients() {
 
   wrap.innerHTML = "";
   wrap.appendChild(grid);
-}
-
-// ── CONTACT TRACKER ───────────────────────────────────────────────────────
-// Normalizes the four separate contact stores (Key Contacts, Flow, Current
-// Clients, Leads) into one flat list for the unified Contacts tab. Each entry
-// keeps a reference to its original record + the right save function, so tag
-// toggling and click-through reuse the exact same mutation paths each source
-// already has — this view never writes anywhere new.
-function getAllContactsUnified(){
-  var list=[];
-  (customData.players||[]).forEach(function(p){
-    list.push({source:"player", sourceLabel:"Key Contact", id:p.id, name:p.name||"", company:p.company||"", phone:p.phone||"", email:p.email||"", city:"", statusLabel:p.title||"Key Contact", record:p, tagSaveFn:saveAll});
-  });
-  (outreachContacts||[]).forEach(function(c){
-    var stageInfo=FLOW_STAGES.find(function(s){ return s.key===c.stage; });
-    list.push({source:"flow", sourceLabel:"Flow", id:c.id, name:c.name||"", company:c.company||"", phone:c.phone||"", email:c.email||"", city:c.city||"", statusLabel:stageInfo?stageInfo.label:c.stage, record:c, tagSaveFn:saveOutreachFlow});
-  });
-  (customData.clientProps||[]).forEach(function(cp){
-    list.push({source:"client", sourceLabel:"Client", id:cp.key, name:cp.name||"", company:cp.company||"", phone:cp.phone||"", email:cp.email||"", city:cp.city||"", statusLabel:"Current Client", record:cp, tagSaveFn:saveAll});
-  });
-  var leadStageLabels={new:"New Lead",outreach:"Outreach Sent",appointed:"Appointed"};
-  (enrichedContacts||[]).forEach(function(c){
-    list.push({source:"lead", sourceLabel:"Lead", id:c.id, name:c.name||"", company:c.company||"", phone:c.phone||"", email:c.email||"", city:c.city||"", statusLabel:leadStageLabels[c.stage]||"New Lead", record:c, tagSaveFn:saveEnriched});
-  });
-  return list;
-}
-
-var _contactsSourceFilter="all";
-var CONTACTS_SOURCE_FILTERS=[
-  {key:"all",    label:"All"},
-  {key:"player", label:"Key Contacts"},
-  {key:"flow",   label:"Flow"},
-  {key:"client", label:"Clients"},
-  {key:"lead",   label:"Leads"}
-];
-var CONTACTS_SOURCE_COLORS={player:"#9b59b6",flow:"#378ADD",client:"#1D9E75",lead:"#f39c12"};
-
-function renderContacts() {
-  if(!document.getElementById("contact-search")) return;
-  var q=document.getElementById("contact-search").value.toLowerCase().trim();
-  var all=getAllContactsUnified();
-
-  var filterBar=document.getElementById("contacts-source-filter-bar");
-  if(filterBar){
-    filterBar.innerHTML="";
-    CONTACTS_SOURCE_FILTERS.forEach(function(f){
-      var p=document.createElement("button");
-      p.className="flow-filter-pill"+(_contactsSourceFilter===f.key?" active":"");
-      p.textContent=f.label;
-      p.onclick=function(){ _contactsSourceFilter=f.key; renderContacts(); };
-      filterBar.appendChild(p);
-    });
-  }
-
-  var filtered=all.filter(function(c){
-    if(_contactsSourceFilter!=="all"&&c.source!==_contactsSourceFilter) return false;
-    if(!q) return true;
-    return [c.name,c.company,c.phone,c.email,c.city].join(" ").toLowerCase().includes(q);
-  });
-
-  var counts={player:0,flow:0,client:0,lead:0};
-  all.forEach(function(c){ counts[c.source]++; });
-  document.getElementById("contact-stat").textContent=
-    filtered.length+" of "+all.length+" contacts — "
-    +counts.player+" Key Contact"+(counts.player===1?"":"s")+" · "
-    +counts.flow+" Flow · "
-    +counts.client+" Client"+(counts.client===1?"":"s")+" · "
-    +counts.lead+" Lead"+(counts.lead===1?"":"s");
-
-  var wrap=document.getElementById("contact-table-wrap");
-  if(!filtered.length){
-    wrap.innerHTML="<div class='empty-state'>No contacts found.</div>";
-    return;
-  }
-
-  var list=document.createElement("div");
-  filtered.forEach(function(c){
-    var card=document.createElement("div"); card.className="flow-card";
-    var left=document.createElement("div"); left.className="flow-card-left";
-
-    var clickArea=document.createElement("div");
-    clickArea.style.cssText="cursor:pointer";
-    clickArea.title="Click to open";
-    clickArea.onclick=(function(item){ return function(){
-      if(item.source==="player") openEditPlayer(item.id);
-      else if(item.source==="flow") openFlowEditModal(item.id);
-      else if(item.source==="client") openClientEditModal(item.id);
-      else showTab("enriched");
-    }; })(c);
-
-    var nameLine=document.createElement("div"); nameLine.className="flow-card-name";
-    nameLine.textContent=c.name||"(no name)";
-    var srcBadge=document.createElement("span"); srcBadge.className="flow-stage-pill";
-    srcBadge.style.cssText="margin-left:8px;background:"+CONTACTS_SOURCE_COLORS[c.source]+"22;color:"+CONTACTS_SOURCE_COLORS[c.source];
-    srcBadge.textContent=c.sourceLabel;
-    nameLine.appendChild(srcBadge);
-    var statusBadge=document.createElement("span"); statusBadge.className="flow-stage-pill flow-pill-call";
-    statusBadge.style.marginLeft="6px";
-    statusBadge.textContent=c.statusLabel;
-    nameLine.appendChild(statusBadge);
-    clickArea.appendChild(nameLine);
-
-    var sub=document.createElement("div"); sub.className="flow-card-sub";
-    var parts=[];
-    if(c.company) parts.push(c.company);
-    if(c.city) parts.push(c.city);
-    if(c.phone) parts.push(c.phone);
-    if(c.email) parts.push(c.email);
-    sub.textContent=parts.join(" · ")||"";
-    clickArea.appendChild(sub);
-    left.appendChild(clickArea);
-
-    var tagRow=buildTagRow(contactTagStore(c.record, c.tagSaveFn).tags, (function(item){ return function(tagKey){
-      toggleContactTag(item.record, tagKey, item.tagSaveFn);
-      renderContacts();
-    }; })(c));
-    tagRow.style.marginTop="6px";
-    left.appendChild(tagRow);
-
-    card.appendChild(left);
-    list.appendChild(card);
-  });
-
-  wrap.innerHTML=""; wrap.appendChild(list);
 }
 
 // ── ADD CLIENT ────────────────────────────────────────────────────────────
