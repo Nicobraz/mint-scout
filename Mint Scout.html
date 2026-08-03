@@ -9122,11 +9122,7 @@ function renderFlowTab(){
     if(c.stage==="research"){
       var b=document.createElement("button"); b.className="flow-btn flow-btn-research";
       b.textContent="✉ Mark Emailed";
-      b.onclick=(function(id){ return function(){
-        var contact=outreachContacts.find(function(x){ return x.id===id; });
-        if(contact&&contact.email){ var em=buildFlowEmail(contact); window.open(gmailComposeUrl(contact.email,em.subject,em.body),"_blank"); }
-        setFlowStage(id,"email",null);
-      }; })(c.id);
+      b.onclick=(function(id){ return function(){ setFlowStage(id,"email",null); }; })(c.id);
       actions.appendChild(b);
     } else if(c.stage==="email"){
       var b=document.createElement("button"); b.className="flow-btn flow-btn-email";
