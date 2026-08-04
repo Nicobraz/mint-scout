@@ -496,8 +496,13 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
   <div class="flow-filter-bar" id="map-groupby-bar">
     <button class="flow-filter-pill active" id="mgb-btn-company" onclick="setMapGroupBy('company')">By Company</button>
     <button class="flow-filter-pill" id="mgb-btn-city" onclick="setMapGroupBy('city')">By City</button>
+    <button class="flow-filter-pill" id="mgb-btn-mapview" onclick="setMapGroupBy('mapview')">🗺 Map View</button>
   </div>
   <div class="board" id="board"></div>
+  <div id="properties-map-wrap" style="display:none">
+    <div id="properties-map" style="height:600px;border-radius:10px;overflow:hidden;border:1px solid #e8e8e8"></div>
+    <div style="font-size:11px;color:#aaa;margin-top:5px">Solid pins have a saved location; faded pins are a city-center estimate. Click any pin to open the full property card.</div>
+  </div>
 </div>
 
 <!-- COMPANIES (property management groups — phone/address/website/notes,
@@ -4061,6 +4066,7 @@ function setMapGroupBy(mode){
   _mapGroupBy=mode;
   document.getElementById("mgb-btn-company").classList.toggle("active",mode==="company");
   document.getElementById("mgb-btn-city").classList.toggle("active",mode==="city");
+  document.getElementById("mgb-btn-mapview").classList.toggle("active",mode==="mapview");
   renderMap();
 }
 
@@ -4074,6 +4080,10 @@ function renderMap() {
     var sf=[r[0],r[1]||"",r[2]||"",r[3]||"",d.manager||"",d.phone||"",d.phone2||"",d.email||"",d.notes||""].join(" ").toLowerCase();
     return (!q||sf.includes(q))&&(!cityF||r[2]===cityF)&&(!status||d.status===status);
   });
+
+  document.getElementById("board").style.display=_mapGroupBy==="mapview"?"none":"";
+  document.getElementById("properties-map-wrap").style.display=_mapGroupBy==="mapview"?"":"none";
+  if(_mapGroupBy==="mapview"){ renderPropertiesMap(filtered); return; }
 
   var byCity=_mapGroupBy==="city";
   var grouped={};
@@ -4199,6 +4209,53 @@ function renderMap() {
 function openAddPropertyForCity(cityName) {
   openModal("addProperty");
   var cityInp=document.getElementById("new-prop-city"); if(cityInp) cityInp.value=cityName;
+}
+
+// Same tag-priority color scheme as the board's legend/borderClass().
+function propMarkerColor(d){
+  var tags=(d&&d.tags)||[];
+  if(tags.indexOf("estimate-sent")>-1) return "#f39c12";
+  if(tags.indexOf("met-in-person")>-1) return "#9b59b6";
+  if(tags.indexOf("contacted")>-1) return "#3498db";
+  if(d&&(d.phone||d.email||d.manager||d.notes)) return "#378ADD";
+  return "#aaa";
+}
+
+var _propMap=null;
+
+// Plots the currently-filtered properties on a Leaflet map, reusing whatever
+// coordinates are already known (getPropCoords() — a precise cached geocode,
+// or a city-center estimate) rather than geocoding on the fly, so this stays
+// fast even with hundreds of properties. Properties with no known city and no
+// cached geocode are silently skipped (reflected in the "N of M" stat).
+function renderPropertiesMap(filtered){
+  var mapEl=document.getElementById("properties-map");
+  if(_propMap){ _propMap.remove(); _propMap=null; }
+  var map=L.map(mapEl).setView([39.5,-111.6],7);
+  _propMap=map;
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
+    attribution:"© OpenStreetMap contributors",maxZoom:19
+  }).addTo(map);
+
+  var points=[], plotted=0;
+  filtered.forEach(function(r){
+    var info=getPropCoords(r);
+    if(!info) return;
+    var d=propData[pkey(r)]||{};
+    var color=propMarkerColor(d);
+    var icon=L.divIcon({className:"",html:"<div style='width:13px;height:13px;background:"+color+";border:2px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.35);cursor:pointer"+(info.exact?"":";opacity:.6")+"'></div>",iconSize:[13,13],iconAnchor:[6,6]});
+    var marker=L.marker([info.coords.lat,info.coords.lon],{icon:icon}).addTo(map);
+    marker.bindTooltip("<b>"+r[0]+"</b>"+(r[1]?"<br><span style='color:#888'>"+r[1]+"</span>":""),{direction:"top",offset:[0,-6]});
+    marker.on("click",function(){ openNearbyCardPanel(r); });
+    points.push([info.coords.lat,info.coords.lon]);
+    plotted++;
+  });
+
+  document.getElementById("map-stat").textContent=plotted+" of "+filtered.length+" properties plotted"
+    +(plotted<filtered.length?" — the rest need a location (search Nearby once nearby to fill more in)":"");
+
+  if(points.length) map.fitBounds(L.latLngBounds(points),{padding:[24,24]});
+  setTimeout(function(){ map.invalidateSize(); },100);
 }
 
 // List of Contacts working for a company (matched by their .company field —
