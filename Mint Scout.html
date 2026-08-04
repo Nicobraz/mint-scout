@@ -500,6 +500,12 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
   </div>
   <div class="board" id="board"></div>
   <div id="properties-map-wrap" style="display:none">
+    <div class="flow-filter-bar" id="map-status-filter-bar">
+      <button class="flow-filter-pill" id="mvf-btn-client" onclick="toggleMapViewFilter('client')">✅ Current Clients</button>
+      <button class="flow-filter-pill" id="mvf-btn-contacted" onclick="toggleMapViewFilter('contacted')">🔵 Contacted</button>
+      <button class="flow-filter-pill" id="mvf-btn-met-in-person" onclick="toggleMapViewFilter('met-in-person')">🟣 Met In Person</button>
+      <button class="flow-filter-pill" id="mvf-btn-estimate-sent" onclick="toggleMapViewFilter('estimate-sent')">🟠 Estimate Sent</button>
+    </div>
     <div id="properties-map" style="height:600px;border-radius:10px;overflow:hidden;border:1px solid #e8e8e8"></div>
     <div style="font-size:11px;color:#aaa;margin-top:5px">Solid pins have a saved location; faded pins are a city-center estimate. Click any pin to open the full property card.</div>
   </div>
@@ -4223,12 +4229,35 @@ function propMarkerColor(d){
 
 var _propMap=null;
 
+// Map View's own multi-select status filter — a property matches if it has
+// ANY of the currently-active filters (OR, not AND); empty = show everyone.
+// Separate from the board's single-select statusFilter dropdown since these
+// read the current tags array (+ Current Client) rather than the legacy
+// single .status field.
+var _mapViewFilters=[];
+function toggleMapViewFilter(key){
+  var idx=_mapViewFilters.indexOf(key);
+  if(idx>-1) _mapViewFilters.splice(idx,1); else _mapViewFilters.push(key);
+  document.getElementById("mvf-btn-"+key).classList.toggle("active",_mapViewFilters.indexOf(key)>-1);
+  renderMap();
+}
+function propMatchesMapViewFilters(r){
+  if(!_mapViewFilters.length) return true;
+  var k=pkey(r), d=propData[k]||{}, tags=d.tags||[];
+  var isClient=(customData.clientProps||[]).some(function(cp){ return cp.key===k; });
+  return _mapViewFilters.some(function(f){
+    if(f==="client") return isClient;
+    return tags.indexOf(f)>-1;
+  });
+}
+
 // Plots the currently-filtered properties on a Leaflet map, reusing whatever
 // coordinates are already known (getPropCoords() — a precise cached geocode,
 // or a city-center estimate) rather than geocoding on the fly, so this stays
 // fast even with hundreds of properties. Properties with no known city and no
 // cached geocode are silently skipped (reflected in the "N of M" stat).
-function renderPropertiesMap(filtered){
+function renderPropertiesMap(rawFiltered){
+  var filtered=rawFiltered.filter(propMatchesMapViewFilters);
   var mapEl=document.getElementById("properties-map");
   if(_propMap){ _propMap.remove(); _propMap=null; }
   var map=L.map(mapEl).setView([39.5,-111.6],7);
