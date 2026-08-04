@@ -493,6 +493,10 @@ h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
     <input type="file" id="prop-email-csv-input" accept=".csv" style="display:none" onchange="importPropertyEmails(this)">
     <span class="stat" id="map-stat"></span>
   </div>
+  <div class="flow-filter-bar" id="map-groupby-bar">
+    <button class="flow-filter-pill active" id="mgb-btn-company" onclick="setMapGroupBy('company')">By Company</button>
+    <button class="flow-filter-pill" id="mgb-btn-city" onclick="setMapGroupBy('city')">By City</button>
+  </div>
   <div class="board" id="board"></div>
 </div>
 
@@ -4052,113 +4056,149 @@ function buildCard(r) {
 }
 
 // ── RENDER MAP ────────────────────────────────────────────────────────────
+var _mapGroupBy="company";
+function setMapGroupBy(mode){
+  _mapGroupBy=mode;
+  document.getElementById("mgb-btn-company").classList.toggle("active",mode==="company");
+  document.getElementById("mgb-btn-city").classList.toggle("active",mode==="city");
+  renderMap();
+}
+
 function renderMap() {
   var q=document.getElementById("search").value.trim().toLowerCase(),
-      city=document.getElementById("cityFilter").value,
+      cityF=document.getElementById("cityFilter").value,
       status=document.getElementById("statusFilter").value,
       rows=getAllRows();
   var filtered=rows.filter(function(r){
     var d=propData[pkey(r)]||{};
     var sf=[r[0],r[1]||"",r[2]||"",r[3]||"",d.manager||"",d.phone||"",d.phone2||"",d.email||"",d.notes||""].join(" ").toLowerCase();
-    return (!q||sf.includes(q))&&(!city||r[2]===city)&&(!status||d.status===status);
+    return (!q||sf.includes(q))&&(!cityF||r[2]===cityF)&&(!status||d.status===status);
   });
-  var grouped={};
-  filtered.forEach(function(r){ var k=r[1]||"No management company"; if(!grouped[k]) grouped[k]=[]; grouped[k].push(r); });
-  customData.companies.forEach(function(co){ if(!grouped[co]) grouped[co]=[]; });
-  // Companies that have key players sort first
-  var kpCompanies = {};
-  (customData.players||[]).forEach(function(p){ if(p.company) kpCompanies[p.company]=1; });
-  var sorted=Object.keys(grouped).sort(function(a,b){
-    var aKP = !!kpCompanies[a], bKP = !!kpCompanies[b];
-    if(aKP && !bKP) return -1;
-    if(!aKP && bKP) return 1;
-    return a.localeCompare(b);
-  });
-  document.getElementById("map-stat").textContent=filtered.length+" properties \xb7 "+sorted.length+" companies";
-  var board=document.getElementById("board"); board.innerHTML="";
-  sorted.forEach(function(co,i){
-    // Key players for this company (by name match in contact/manager fields)
-    var keyPlayerNames = (customData.players||[])
-      .filter(function(p){ return p.company === co; })
-      .map(function(p){ return p.name.toLowerCase(); });
 
-    var props=grouped[co].slice().sort(function(a,b){
-      var ak = pkey(a), bk = pkey(b);
-      var da = propData[ak]||{}, db = propData[bk]||{};
-      // Check if property manager or contact matches a key player for this company
-      var aIsKP = keyPlayerNames.some(function(kpn){
-        return (da.manager||"").toLowerCase().includes(kpn) || (da.contact||"").toLowerCase().includes(kpn);
-      });
-      var bIsKP = keyPlayerNames.some(function(kpn){
-        return (db.manager||"").toLowerCase().includes(kpn) || (db.contact||"").toLowerCase().includes(kpn);
-      });
-      if(aIsKP && !bIsKP) return -1;
-      if(!aIsKP && bIsKP) return 1;
-      return a[0].localeCompare(b[0]);
+  var byCity=_mapGroupBy==="city";
+  var grouped={};
+  filtered.forEach(function(r){ var k=byCity?(r[2]||"Unknown City"):(r[1]||"No management company"); if(!grouped[k]) grouped[k]=[]; grouped[k].push(r); });
+  if(!byCity) customData.companies.forEach(function(co){ if(!grouped[co]) grouped[co]=[]; });
+
+  var sorted;
+  if(byCity){
+    sorted=Object.keys(grouped).sort(function(a,b){ return a.localeCompare(b); });
+  } else {
+    // Companies that have key players sort first
+    var kpCompanies = {};
+    (customData.players||[]).forEach(function(p){ if(p.company) kpCompanies[p.company]=1; });
+    sorted=Object.keys(grouped).sort(function(a,b){
+      var aKP = !!kpCompanies[a], bKP = !!kpCompanies[b];
+      if(aKP && !bKP) return -1;
+      if(!aKP && bKP) return 1;
+      return a.localeCompare(b);
     });
+  }
+
+  document.getElementById("map-stat").textContent=filtered.length+" properties \xb7 "+sorted.length+(byCity?" cities":" companies");
+  var board=document.getElementById("board"); board.innerHTML="";
+  sorted.forEach(function(groupKey,i){
+    var props;
+    if(byCity){
+      props=grouped[groupKey].slice().sort(function(a,b){ return a[0].localeCompare(b[0]); });
+    } else {
+      // Key players for this company (by name match in contact/manager fields)
+      var keyPlayerNames = (customData.players||[])
+        .filter(function(p){ return p.company === groupKey; })
+        .map(function(p){ return p.name.toLowerCase(); });
+      props=grouped[groupKey].slice().sort(function(a,b){
+        var ak = pkey(a), bk = pkey(b);
+        var da = propData[ak]||{}, db = propData[bk]||{};
+        // Check if property manager or contact matches a key player for this company
+        var aIsKP = keyPlayerNames.some(function(kpn){
+          return (da.manager||"").toLowerCase().includes(kpn) || (da.contact||"").toLowerCase().includes(kpn);
+        });
+        var bIsKP = keyPlayerNames.some(function(kpn){
+          return (db.manager||"").toLowerCase().includes(kpn) || (db.contact||"").toLowerCase().includes(kpn);
+        });
+        if(aIsKP && !bIsKP) return -1;
+        if(!aIsKP && bIsKP) return 1;
+        return a[0].localeCompare(b[0]);
+      });
+    }
     var dot=DOTS[i%DOTS.length];
     var col=document.createElement("div"); col.className="col";
     var hdr=document.createElement("div"); hdr.className="col-hdr";
     var hl=document.createElement("div"); hl.className="col-hdr-left";
     var nm=document.createElement("div"); nm.className="col-name";
     var ds=document.createElement("span"); ds.className="col-dot"; ds.style.background=dot;
-    nm.appendChild(ds); nm.appendChild(document.createTextNode(co));
+    nm.appendChild(ds); nm.appendChild(document.createTextNode(groupKey));
     var cnt=document.createElement("div"); cnt.className="col-count"; cnt.textContent=props.length+(props.length===1?" property":" properties");
     hl.appendChild(nm); hl.appendChild(cnt);
     var addBtn=document.createElement("button"); addBtn.className="col-add-btn"; addBtn.title="Add property"; addBtn.textContent="+";
-    addBtn.onclick=(function(coName){ return function(){ openAddPropertyForCompany(coName); }; })(co);
-    var infoBtn=document.createElement("button"); infoBtn.className="col-info-btn"; infoBtn.title="Company info"; infoBtn.textContent="ℹ️";
-    infoBtn.onclick=(function(coName, infoBtnEl){ return function(){
-      var infoDiv=document.getElementById("coinfo-"+coName.replace(/[^a-z0-9]/gi,"_"));
-      if(infoDiv){ infoDiv.classList.toggle("open"); infoBtnEl.classList.toggle("active",infoDiv.classList.contains("open")); }
-    }; })(co, infoBtn);
-    hdr.appendChild(hl); hdr.appendChild(infoBtn); hdr.appendChild(addBtn);
+    addBtn.onclick=byCity
+      ?(function(cityName){ return function(){ openAddPropertyForCity(cityName); }; })(groupKey)
+      :(function(coName){ return function(){ openAddPropertyForCompany(coName); }; })(groupKey);
+    hdr.appendChild(hl);
 
-    // Company info panel — backed by the id-bearing companyRegistry record
-    // (lazily created/migrated from the old companyInfo map by getCompanyRecord)
-    var coRec = getCompanyRecord(co) || {};
-    var safeCoId = "coinfo-"+co.replace(/[^a-z0-9]/gi,"_");
-    var infoPanel = document.createElement("div"); infoPanel.className="co-info"; infoPanel.id=safeCoId;
+    var infoPanel=null;
+    if(!byCity){
+      var infoBtn=document.createElement("button"); infoBtn.className="col-info-btn"; infoBtn.title="Company info"; infoBtn.textContent="ℹ️";
+      infoBtn.onclick=(function(coName, infoBtnEl){ return function(){
+        var infoDiv=document.getElementById("coinfo-"+coName.replace(/[^a-z0-9]/gi,"_"));
+        if(infoDiv){ infoDiv.classList.toggle("open"); infoBtnEl.classList.toggle("active",infoDiv.classList.contains("open")); }
+      }; })(groupKey, infoBtn);
+      hdr.appendChild(infoBtn);
+    }
+    hdr.appendChild(addBtn);
 
-    // Total properties stat
-    var statRow=document.createElement("div"); statRow.className="co-info-row";
-    var statLbl=document.createElement("div"); statLbl.className="co-info-label"; statLbl.textContent="Total Properties";
-    var statVal=document.createElement("div"); statVal.className="co-info-stat"; statVal.textContent=props.length+(props.length===1?" property":" properties");
-    statRow.appendChild(statLbl); statRow.appendChild(statVal);
-    infoPanel.appendChild(statRow);
+    if(!byCity){
+      // Company info panel — backed by the id-bearing companyRegistry record
+      // (lazily created/migrated from the old companyInfo map by getCompanyRecord)
+      var coRec = getCompanyRecord(groupKey) || {};
+      var safeCoId = "coinfo-"+groupKey.replace(/[^a-z0-9]/gi,"_");
+      infoPanel = document.createElement("div"); infoPanel.className="co-info"; infoPanel.id=safeCoId;
 
-    // Phone / Address / Website / Notes — each saves directly onto the
-    // companyRegistry record for this company name.
-    [
-      {key:"phone",   label:"Phone",   tag:"input", ph:"(801) 555-0000"},
-      {key:"address", label:"Address", tag:"input", ph:"Company address..."},
-      {key:"website", label:"Website", tag:"input", ph:"https://..."},
-      {key:"notes",   label:"Notes",   tag:"textarea", ph:"Notes about this company..."}
-    ].forEach(function(fd){
-      var row=document.createElement("div"); row.className="co-info-row";
-      var lbl=document.createElement("div"); lbl.className="co-info-label"; lbl.textContent=fd.label;
-      var inp=document.createElement(fd.tag); inp.className="co-info-input"; inp.placeholder=fd.ph; inp.value=coRec[fd.key]||"";
-      if(fd.tag==="textarea") inp.rows=3;
-      var sv=document.createElement("div"); sv.className="co-info-saved";
-      if(fd.key==="website"&&coRec.website){
-        var wlink=document.createElement("a"); wlink.className="co-info-link"; wlink.href=coRec.website; wlink.target="_blank"; wlink.textContent=coRec.website;
-        row.appendChild(lbl); row.appendChild(wlink);
-      } else {
-        row.appendChild(lbl);
-      }
-      row.appendChild(inp); row.appendChild(sv);
-      inp.oninput=(function(rec,fkey,el,savedEl){ return function(){
-        rec[fkey]=el.value; saveAll();
-        savedEl.textContent="Saved ✓"; setTimeout(function(){ savedEl.textContent=""; },1400);
-      }; })(coRec,fd.key,inp,sv);
-      infoPanel.appendChild(row);
-    });
-    infoPanel.appendChild(buildCompanyContactsSection(co));
+      // Total properties stat
+      var statRow=document.createElement("div"); statRow.className="co-info-row";
+      var statLbl=document.createElement("div"); statLbl.className="co-info-label"; statLbl.textContent="Total Properties";
+      var statVal=document.createElement("div"); statVal.className="co-info-stat"; statVal.textContent=props.length+(props.length===1?" property":" properties");
+      statRow.appendChild(statLbl); statRow.appendChild(statVal);
+      infoPanel.appendChild(statRow);
+
+      // Phone / Address / Website / Notes — each saves directly onto the
+      // companyRegistry record for this company name.
+      [
+        {key:"phone",   label:"Phone",   tag:"input", ph:"(801) 555-0000"},
+        {key:"address", label:"Address", tag:"input", ph:"Company address..."},
+        {key:"website", label:"Website", tag:"input", ph:"https://..."},
+        {key:"notes",   label:"Notes",   tag:"textarea", ph:"Notes about this company..."}
+      ].forEach(function(fd){
+        var row=document.createElement("div"); row.className="co-info-row";
+        var lbl=document.createElement("div"); lbl.className="co-info-label"; lbl.textContent=fd.label;
+        var inp=document.createElement(fd.tag); inp.className="co-info-input"; inp.placeholder=fd.ph; inp.value=coRec[fd.key]||"";
+        if(fd.tag==="textarea") inp.rows=3;
+        var sv=document.createElement("div"); sv.className="co-info-saved";
+        if(fd.key==="website"&&coRec.website){
+          var wlink=document.createElement("a"); wlink.className="co-info-link"; wlink.href=coRec.website; wlink.target="_blank"; wlink.textContent=coRec.website;
+          row.appendChild(lbl); row.appendChild(wlink);
+        } else {
+          row.appendChild(lbl);
+        }
+        row.appendChild(inp); row.appendChild(sv);
+        inp.oninput=(function(rec,fkey,el,savedEl){ return function(){
+          rec[fkey]=el.value; saveAll();
+          savedEl.textContent="Saved ✓"; setTimeout(function(){ savedEl.textContent=""; },1400);
+        }; })(coRec,fd.key,inp,sv);
+        infoPanel.appendChild(row);
+      });
+      infoPanel.appendChild(buildCompanyContactsSection(groupKey));
+    }
 
     var body=document.createElement("div"); body.className="col-body";
     props.forEach(function(r){ body.appendChild(buildCard(r)); });
-    col.appendChild(hdr); col.appendChild(infoPanel); col.appendChild(body); board.appendChild(col);
+    col.appendChild(hdr); if(infoPanel) col.appendChild(infoPanel); col.appendChild(body); board.appendChild(col);
   });
+}
+
+function openAddPropertyForCity(cityName) {
+  openModal("addProperty");
+  var cityInp=document.getElementById("new-prop-city"); if(cityInp) cityInp.value=cityName;
 }
 
 // List of Contacts working for a company (matched by their .company field —
