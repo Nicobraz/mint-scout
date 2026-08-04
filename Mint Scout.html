@@ -4153,11 +4153,39 @@ function renderMap() {
       }; })(coRec,fd.key,inp,sv);
       infoPanel.appendChild(row);
     });
+    infoPanel.appendChild(buildCompanyContactsSection(co));
 
     var body=document.createElement("div"); body.className="col-body";
     props.forEach(function(r){ body.appendChild(buildCard(r)); });
     col.appendChild(hdr); col.appendChild(infoPanel); col.appendChild(body); board.appendChild(col);
   });
+}
+
+// List of Contacts working for a company (matched by their .company field —
+// kept accurate by the Linked Properties picker autofilling it from
+// whichever property gets linked). Shared between the Companies tab and the
+// Properties board's per-company ℹ️ panel so both stay in sync automatically.
+function buildCompanyContactsSection(companyName){
+  var contacts=(customData.players||[]).filter(function(p){ return p.company===companyName; });
+  var section=document.createElement("div");
+  var label=document.createElement("div"); label.className="kp-label"; label.style.marginTop="8px"; label.textContent="Contacts";
+  section.appendChild(label);
+  if(!contacts.length){
+    var empty=document.createElement("div"); empty.style.cssText="font-size:12px;color:#aaa;padding:4px 0";
+    empty.textContent="No contacts yet for this company.";
+    section.appendChild(empty);
+    return section;
+  }
+  contacts.forEach(function(p){
+    var row=document.createElement("div");
+    row.style.cssText="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:#f8f8f8;border-radius:6px;margin-top:4px;cursor:pointer;font-size:12px";
+    row.title="Click to edit this contact";
+    var lbl=document.createElement("span"); lbl.textContent=p.name+(p.title?" — "+p.title:"");
+    row.appendChild(lbl);
+    row.onclick=(function(id){ return function(e){ e.stopPropagation(); openEditPlayer(id); }; })(p.id);
+    section.appendChild(row);
+  });
+  return section;
 }
 
 function renderCompanies(){
@@ -4216,6 +4244,7 @@ function renderCompanies(){
       w.appendChild(l); w.appendChild(inp); w.appendChild(sv); fields.appendChild(w);
     });
     card.appendChild(fields);
+    card.appendChild(buildCompanyContactsSection(co));
 
     wrap.appendChild(card);
   });
@@ -4494,6 +4523,14 @@ function filterKpPropSuggestions(){
     item.onclick=(function(row){ return function(){
       var k=pkey(row);
       if(_kpEditingPropertyKeys.indexOf(k)===-1) _kpEditingPropertyKeys.push(k);
+      // Autofill Company from the linked property if it isn't set yet, so
+      // this contact shows up under that company (Companies tab / Properties
+      // board) without having to pick it twice.
+      var companySel=document.getElementById("kp-new-company");
+      if(companySel&&!companySel.value&&row[1]){
+        companySel.value=row[1];
+        document.getElementById("kp-new-company-wrap").style.display="none";
+      }
       document.getElementById("kp-prop-search").value="";
       box.style.display="none";
       renderKpLinkedProps();
